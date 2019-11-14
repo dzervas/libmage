@@ -1,0 +1,10 @@
+[package]
+name = "mage-rs"
+version = "0.1.0"
+authors = ["Dimitris Zervas <dzervas@dzervas.gr>"]
+
+[dependencies]
+serde = "1.0.102"
+serde_derive = "1.0.102"
+bincode = "1.2.0"
+flate2 = "1.0"
