@@ -1,8 +1,5 @@
-//extern crate serde_derive;
 
-//use self::serde_derive::{Deserialize, Serialize};
-
-#[derive(PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub struct Config {
 	pub first: bool,
 	pub last: bool,
@@ -13,29 +10,29 @@ pub struct Config {
 
 impl Config {
 	pub fn new() -> Config {
-	Config {
-		first: false,
-		last: false,
-		seq_len: 0,
-		data_len_len: 0,
-		id_len: 0
+		Config {
+			first: false,
+			last: false,
+			seq_len: 0,
+			data_len_len: 0,
+			id_len: 0
+		}
+	}
+
+	pub fn serialize(&self) -> u8 {
+		let mut result: u8 = 0;
+		// error handling?
+
+		if self.first { result |= 1 << 7 }
+		if self.last { result |= 1 << 6 }
+		result |= (self.seq_len << 4) | (self.data_len_len << 2) | self.id_len;
+
+		result
 	}
 }
 
-pub fn serialize(&self) -> u8 {
-	let mut result: u8 = 0;
-	// error handling?
-
-	if self.first { result |= 1 << 7 }
-	if self.last { result |= 1 << 6 }
-	result |= (self.seq_len << 4) | (self.data_len_len << 2) | self.id_len;
-
-	result
-}
-}
-
-#[derive(PartialEq, Debug)]
-pub struct Packet<'a> {
+#[derive(Clone, PartialEq, Debug)]
+pub struct Packet {
 	// --------- Channel & Version --------- 1 Byte
 	// The protocol version is crammed in here during serialization
 	// and removed during deserialization
@@ -49,29 +46,29 @@ pub struct Packet<'a> {
 	// 2 Bits : Length of sequence number
 	// 2 Bits : Length of data length field
 	// 2 Bits : Length of ID
-	config: Config,
+	pub config: Config,
 
 	// --------- Length --------- 0-6 Bytes - Little Endian!
 	// 3 Byte : Agent ID (optional, up to 3 bytes)
 	pub id: u32,
 	// 3 Bytes: Sequence number (optional, up to 3 bytes)
-	sequence: u32,
+	pub sequence: u32,
 	// 3 Bytes: Data length (optional, up to 3 bytes)
 	pub data_len: u32,
 
 	// --------- Data --------- N Bytes
-	data: &'a [u8],
+	data: Vec<u8>,
 }
 
-impl Packet<'_> {
-	pub fn new(channel: u8, data: &[u8]) -> Packet {
+impl Packet {
+	pub fn new(channel: u8, id: u32, sequence: u32, data: Vec<u8>) -> Packet {
 		// error handling??
 
 		Packet {
 			channel,
 			config: Config::new(),
-			id: 0,
-			sequence: 0,
+			id,
+			sequence,
 			data_len: 0,
 			data,
 		}
@@ -79,25 +76,10 @@ impl Packet<'_> {
 
 	fn calculate_lengths(&mut self) {
 		// error handling?
-        self.data_len = self.data.len() as u32;
-
-		if self.config.id_len > 0 && self.id > 0xFF {
-			self.config.id_len = 2;
-		} else if self.config.id_len > 0 {
-			self.config.id_len = 1;
-		}
-
-		if self.config.data_len_len > 0 && self.data_len > 0xFF {
-			self.config.data_len_len = 2;
-		} else if self.config.data_len_len > 0 {
-			self.config.data_len_len = 1;
-		}
-
-		if self.config.seq_len > 0 && self.sequence > 0xFF {
-			self.config.seq_len = 2;
-		} else if self.config.seq_len > 0 {
-			self.config.seq_len = 1;
-		}
+		self.data_len = self.data.len() as u32;
+		if self.config.id_len > 0 { self.config.id_len = (self.id as f64).log(0x100 as f64).ceil() as u8; }
+		if self.config.data_len_len > 0 { self.config.data_len_len = (self.data_len as f64).log(0x100 as f64).ceil() as u8; }
+		if self.config.seq_len > 0 { self.config.seq_len = (self.sequence as f64).log(0x100 as f64).ceil() as u8; }
 	}
 
 	pub fn has_id(&mut self, v: bool) {
@@ -115,15 +97,23 @@ impl Packet<'_> {
 		else { self.config.seq_len = 0 }
 	}
 
+	pub fn is_first(&mut self, v: bool) {
+		self.config.first = v;
+	}
+
+	pub fn is_last(&mut self, v: bool) {
+		self.config.last = v;
+	}
+
 	pub fn serialize(&mut self) -> Vec<u8> {
 		// Hardcoded protocol version
 		let mut result: Vec<u8> = vec![0x00 | self.channel];
 
-        self.calculate_lengths();
+		self.calculate_lengths();
 		result.push(self.config.serialize());
 
 		for i in (0..self.config.id_len).rev() {
-			result.push((self.id >> (i as u32)*8) as u8);
+			result.push(((self.id >> (8*i as u32)) & 0xff) as u8);
 		}
 
 		for i in (0..self.config.seq_len).rev() {
@@ -141,7 +131,7 @@ impl Packet<'_> {
 }
 
 pub fn deserialize(data: &[u8] ) -> Packet {
-    let channel = data[0];
+	let channel = data[0];
 	let config = Config{
 		first: (data[1] & (1 << 7)) > 0,
 		last: (data[1] & (1 << 6)) > 0,
@@ -160,7 +150,7 @@ pub fn deserialize(data: &[u8] ) -> Packet {
 	Packet{
 		channel,
 		config,
-		data: &data[offset as usize..data.len() as usize],
+		data: data[offset as usize..data.len() as usize].to_vec(),
 		sequence,
 		data_len,
 		id
@@ -169,9 +159,11 @@ pub fn deserialize(data: &[u8] ) -> Packet {
 
 fn bytes_to_u32(bytes: &[u8]) -> u32 {
 	let mut buf: u32 = 0;
-	if bytes.len() > 0 { buf |= (bytes[0] as u32) << 24 }
-	if bytes.len() > 1 { buf |= (bytes[1] as u32) << 16 }
-	if bytes.len() > 2 { buf |= (bytes[2] as u32) << 8 }
-	if bytes.len() > 3 { buf |= (bytes[3] as u32) }
+
+	for i in {0..bytes.len()} {
+		buf <<= 8;
+		buf |= bytes[i] as u32;
+	}
+
 	buf
 }

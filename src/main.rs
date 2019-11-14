@@ -1,17 +1,20 @@
-extern crate bincode;
-
 mod packet;
-
-//use bincode::{deserialize, serialize};
+mod stream;
 
 fn main() {
-//    let s = String::from("hello").into_bytes();
-    let mut p = packet::Packet::new(1, "hello".as_bytes());
-    println!("{:?}", p);
+    let mut p = packet::Packet::new(1, 1234, 0, "hello".as_bytes().to_vec());
+    p.has_id(true);
 
     let s = p.serialize();
+    println!("{:?}", p);
     println!("{:?}", s);
 
-    let d: packet::Packet = packet::deserialize(&s[..]);
+    let d = packet::deserialize(&s[..]);
     println!("{:?}", d);
+
+    let st = stream::Stream::new(10, 10);
+    println!("{:?}", st);
+
+    let cs = st.chunk(13, "hello world wow".as_bytes().to_vec());
+    println!("{:?}", cs);
 }
