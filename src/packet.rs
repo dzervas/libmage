@@ -1,5 +1,6 @@
+use std::cmp::Ordering;
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Eq, Copy, Clone, PartialEq, Debug)]
 pub struct Config {
 	pub first: bool,
 	pub last: bool,
@@ -31,7 +32,7 @@ impl Config {
 	}
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Eq, Clone, Debug)]
 pub struct Packet {
 	// --------- Channel & Version --------- 1 Byte
 	// The protocol version is crammed in here during serialization
@@ -57,11 +58,11 @@ pub struct Packet {
 	pub data_len: u32,
 
 	// --------- Data --------- N Bytes
-	data: Vec<u8>,
+	pub data: Vec<u8>,
 }
 
 impl Packet {
-	pub fn new(channel: u8, id: u32, sequence: u32, data: Vec<u8>) -> Packet {
+	pub fn new(channel: u8, id: u32, sequence: u32, data: Vec<u8>) -> Self {
 		// error handling??
 
 		Packet {
@@ -128,32 +129,50 @@ impl Packet {
 
 		result.clone()
 	}
+
+	pub fn deserialize(data: &[u8] ) -> Self {
+		let channel = data[0];
+		let config = Config{
+			first: (data[1] & (1 << 7)) > 0,
+			last: (data[1] & (1 << 6)) > 0,
+			seq_len: (data[1] & 0b110000) >> 4,
+			data_len_len: (data[1] & 0b1100) >> 2,
+			id_len: (data[1] & 0b11)
+		};
+		let offset = 2 + config.seq_len + config.data_len_len + config.id_len;
+		let sequence: u32 = bytes_to_u32(&data[2..(2 + config.seq_len) as usize]);
+		let data_len: u32 = bytes_to_u32(&data[(2 + config.seq_len) as usize..(offset - config.id_len) as usize]);
+		let id: u32 = bytes_to_u32(&data[(offset - config.id_len) as usize..offset as usize]);
+
+
+		// error handling
+
+		Packet{
+			channel,
+			config,
+			data: data[offset as usize..data.len() as usize].to_vec(),
+			sequence,
+			data_len,
+			id
+		}
+	}
 }
 
-pub fn deserialize(data: &[u8] ) -> Packet {
-	let channel = data[0];
-	let config = Config{
-		first: (data[1] & (1 << 7)) > 0,
-		last: (data[1] & (1 << 6)) > 0,
-		seq_len: (data[1] & 0b110000) >> 4,
-		data_len_len: (data[1] & 0b1100) >> 2,
-		id_len: (data[1] & 0b11)
-	};
-	let offset = 2 + config.seq_len + config.data_len_len + config.id_len;
-	let sequence: u32 = bytes_to_u32(&data[2..(2 + config.seq_len) as usize]);
-	let data_len: u32 = bytes_to_u32(&data[(2 + config.seq_len) as usize..(offset - config.id_len) as usize]);
-	let id: u32 = bytes_to_u32(&data[(offset - config.id_len) as usize..offset as usize]);
+impl Ord for Packet {
+	fn cmp(&self, other: &Self) -> Ordering {
+		self.sequence.cmp(&other.sequence)
+	}
+}
 
+impl PartialOrd for Packet {
+	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+		self.sequence.partial_cmp(&other.sequence)
+	}
+}
 
-	// error handling
-
-	Packet{
-		channel,
-		config,
-		data: data[offset as usize..data.len() as usize].to_vec(),
-		sequence,
-		data_len,
-		id
+impl PartialEq for Packet {
+	fn eq(&self, other: &Self) -> bool {
+		self.sequence == other.sequence
 	}
 }
 
