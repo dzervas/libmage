@@ -22,7 +22,7 @@ impl Config {
 
 	pub fn serialize(&self) -> u8 {
 		let mut result: u8 = 0;
-		// error handling?
+		// TODO: error handling?
 
 		if self.first { result |= 1 << 7 }
 		if self.last { result |= 1 << 6 }
@@ -63,7 +63,7 @@ pub struct Packet {
 
 impl Packet {
 	pub fn new(channel: u8, id: u32, sequence: u32, data: Vec<u8>) -> Self {
-		// error handling??
+		// TODO: error handling??
 
 		Packet {
 			channel,
@@ -76,7 +76,7 @@ impl Packet {
 	}
 
 	fn calculate_lengths(&mut self) {
-		// error handling?
+		// TODO: error handling?
 		self.data_len = self.data.len() as u32;
 		if self.config.id_len > 0 { self.config.id_len = (self.id as f64).log(0x100 as f64).ceil() as u8; }
 		if self.config.data_len_len > 0 { self.config.data_len_len = (self.data_len as f64).log(0x100 as f64).ceil() as u8; }
@@ -145,7 +145,7 @@ impl Packet {
 		let id: u32 = bytes_to_u32(&data[(offset - config.id_len) as usize..offset as usize]);
 
 
-		// error handling
+		// TODO: error handling
 
 		Packet{
 			channel,
