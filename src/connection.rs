@@ -34,15 +34,15 @@ impl<'conn> Connection<'conn> {
         }
     }
 
-    pub fn rw_loop(&self) {
-
+    pub fn channel_loop(&self) {
+        // TODO: Implement the channel distributor
     }
 }
 
 // TODO: Add some kind of warning that this is using default id 0 and channel 0
 impl Read for Connection<'_> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        let mut original = [0u8; 2048];
+        let mut original = [0u8; 32];
         // TODO: Handle too small buffer
         let _result = self.reader.read(&mut original);
 
@@ -53,7 +53,7 @@ impl Read for Connection<'_> {
             None => return Err(Error::new(ErrorKind::UnexpectedEof, "No data for default channel 0"))
         };
 
-        if bytes.len() < buf.len() {
+        if bytes.len() > buf.len() {
             return Err(Error::new(ErrorKind::WouldBlock, "Buffer is too small"))
         }
 

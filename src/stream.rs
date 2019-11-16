@@ -24,8 +24,12 @@ impl Stream {
         let mut overhead: usize = 2;
         let mut chunks: Vec<Vec<u8>> = Vec::new();
 
-        if self.has_id && id > 0 { overhead += (id as f64).log(0x100 as f64).ceil() as usize }
-        else if self.has_id { overhead += 1 }
+        let calc_bytes = |x| {
+            if x <= 0 { return 1usize }
+            (x as f64).log(0x100 as f64).ceil() as usize
+        };
+
+        if self.has_id { overhead += calc_bytes(id) }
         if self.has_sequence { overhead += 1 }
         if self.has_data_len { overhead += 1 }
 
@@ -63,7 +67,7 @@ impl Stream {
 //            if self.has_seq && i == 0xffff { overhead += 1 }
 //            if self.has_data_len && i == 0xff { overhead += 1 }
 //            if self.has_data_len && i == 0xffff { overhead += 1 }
-            println!("{:?}", buf);
+            println!("Chunked {:?}", buf);
             chunks.push(buf.serialize());
         }
 
@@ -83,7 +87,7 @@ impl Stream {
         // TODO: error handling
         for i in {0..(chunks.len() / self.chunk_size) + 1} {
             data.push(Packet::deserialize(&chunks[chunks_max_length(i)..chunks_max_length(i+1)]));
-            println!("{:?}", data[i]);
+            println!("Dechunked {:?}", data[i]);
             // TODO: config & id error handling
         }
 

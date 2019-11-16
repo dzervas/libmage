@@ -78,9 +78,15 @@ impl Packet {
 	fn calculate_lengths(&mut self) {
 		// TODO: error handling?
 		self.data_len = self.data.len() as u32;
-		if self.config.id_len > 0 { self.config.id_len = (self.id as f64).log(0x100 as f64).ceil() as u8; }
-		if self.config.data_len_len > 0 { self.config.data_len_len = (self.data_len as f64).log(0x100 as f64).ceil() as u8; }
-		if self.config.seq_len > 0 { self.config.seq_len = (self.sequence as f64).log(0x100 as f64).ceil() as u8; }
+
+		let calc_bytes = |x| {
+			if x <= 0 { return 1u8 }
+			(x as f64).log(0x100 as f64).ceil() as u8
+		};
+
+		if self.config.id_len > 0 { self.config.id_len = calc_bytes(self.id); }
+		if self.config.data_len_len > 0 { self.config.data_len_len = calc_bytes(self.data_len); }
+		if self.config.seq_len > 0 { self.config.seq_len = calc_bytes(self.sequence); }
 	}
 
 	pub fn has_id(&mut self, v: bool) {
