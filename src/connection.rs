@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::{Read, Write, Error, Result, ErrorKind};
 use stream::Stream;
 use channel::Channel;
 use std::sync::mpsc::{Sender, Receiver, channel as ch};
@@ -6,17 +6,17 @@ use std::collections::HashMap;
 
 pub struct Connection<'conn> {
     stream: Stream,
-    reader: &'conn dyn Read,
-    writer: &'conn dyn Write,
+    reader: &'conn mut dyn Read,
+    writer: &'conn mut dyn Write,
     channels: HashMap<u8, Vec<(Sender<Vec<u8>>, Receiver<Vec<u8>>)>>
 }
 
 impl<'conn> Connection<'conn> {
-    pub fn new(reader: &'conn impl Read, writer: &'conn impl Write, chunk_size: usize, has_id: bool, has_sequence: bool, has_data_len: bool) -> Self {
+    pub fn new(reader: &'conn mut impl Read, writer: &'conn mut impl Write, chunk_size: usize, has_id: bool, has_sequence: bool, has_data_len: bool) -> Self {
         Connection {
             stream: Stream::new(chunk_size, has_id, has_sequence, has_data_len),
-            reader: reader,
-            writer: writer,
+            reader,
+            writer,
             channels: HashMap::new()
         }
     }
@@ -36,5 +36,45 @@ impl<'conn> Connection<'conn> {
 
     pub fn rw_loop(&self) {
 
+    }
+}
+
+// TODO: Add some kind of warning that this is using default id 0 and channel 0
+impl Read for Connection<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        let mut original = [0u8; 2048];
+        // TODO: Handle too small buffer
+        let _result = self.reader.read(&mut original);
+
+        // TODO: Error handling
+        let dechunked = self.stream.dechunk(original.to_vec());
+        let bytes = match dechunked.get(&0u8) {
+            Some(d) => d,
+            None => return Err(Error::new(ErrorKind::UnexpectedEof, "No data for default channel 0"))
+        };
+
+        if bytes.len() < buf.len() {
+            return Err(Error::new(ErrorKind::WouldBlock, "Buffer is too small"))
+        }
+
+        buf.copy_from_slice(bytes.as_slice());
+        Ok(bytes.len())
+    }
+}
+
+impl Write for Connection<'_> {
+    fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        let mut result: Result<usize> = Ok(0);
+        for d in self.stream.chunk(0, 0, buf.to_vec()) {
+            result = match self.writer.write(d.as_slice()) {
+                Ok(_) => Ok(buf.len()),
+                Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),
+            };
+        }
+        result
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        self.writer.flush()
     }
 }

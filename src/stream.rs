@@ -24,7 +24,8 @@ impl Stream {
         let mut overhead: usize = 2;
         let mut chunks: Vec<Vec<u8>> = Vec::new();
 
-        if self.has_id { overhead += (id as f64).log(0x100 as f64).ceil() as usize }
+        if self.has_id && id > 0 { overhead += (id as f64).log(0x100 as f64).ceil() as usize }
+        else if self.has_id { overhead += 1 }
         if self.has_sequence { overhead += 1 }
         if self.has_data_len { overhead += 1 }
 
