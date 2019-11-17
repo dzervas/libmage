@@ -160,9 +160,11 @@ impl Stream {
         };
 
         for i in {0..(chunks.len() / self.chunk_size) + 1} {
-            let d = &chunks[chunks_max_length(i)..chunks_max_length(i+1)];
+            let cipher = &chunks[chunks_max_length(i)..chunks_max_length(i+1)];
             // TODO: Use the tag field? What's that None?
-            let plain = match self.dec_stream.pull(d, None) {
+            let asdf = self.dec_stream.pull(cipher, None);
+            println!("{:?}", asdf);
+            let plain = match asdf {
                 Ok(d) => d.0,
                 Err(_) => return Err(StreamError::DecryptionError)
             };
@@ -200,7 +202,7 @@ mod tests {
     // Known keys: vec![2; 32] -> public vec![252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6]
 
     #[test]
-    fn stream_new() {
+    fn new() {
         assert!(Stream::new(true, vec![1; 32].as_slice(), vec![2; 32].as_slice()).is_ok(), "A stream should be able to get created with the above config");
         assert!(Stream::new(false, vec![1; 31].as_slice(), vec![2; 32].as_slice()).is_err(), "Key seed is too small, must be 32 bytes");
         assert!(Stream::new(true, vec![1; 33].as_slice(), vec![2; 32].as_slice()).is_err(), "Key seed is too big, must be 32 bytes");
@@ -209,9 +211,9 @@ mod tests {
     }
 
     #[test]
-    fn stream_chunking() {
-        let mut server = Stream::new(true, vec![2; 32].as_slice(), vec![171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111].as_slice()).unwrap();
-        let mut client = Stream::new(false, vec![1; 32].as_slice(), vec![252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6].as_slice()).unwrap();
+    fn chunk_dechunk() {
+        let mut server = Stream::new(true, &[2; 32], vec![171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111].as_slice()).unwrap();
+        let mut client = Stream::new(false, &[1; 32], vec![252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6].as_slice()).unwrap();
 
         test_stream_chunking(true, client.borrow_mut(), server.borrow_mut(), 13, 8, vec![4u8; 8]);
         test_stream_chunking(true, server.borrow_mut(), client.borrow_mut(), 13, 8, vec![4u8; 8]);

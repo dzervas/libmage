@@ -249,7 +249,7 @@ mod tests {
     }
 
 	#[test]
-	fn packet_new() {
+	fn packet() {
         assert!(Packet::new(1, 1234, 0, vec![2u8; 2]).is_ok(), "A packet should be able to get created with the above config");
 		assert!(Packet::new(0x1f, 1234, 0, vec![2u8; 2]).is_err(), "Channel should be 4 bits (<16)");
 		assert!(Packet::new(0xf, 0x1ffffff, 0, vec![2u8; 2]).is_err(), "ID should be 3 bytes (<0xFFFFFF)");
@@ -258,7 +258,7 @@ mod tests {
 	}
 
 	#[test]
-	fn packet_serialization() {
+	fn serialize_deserialize() {
 		let mut p = Packet::new(1, 1234, 0, vec![2u8; 2]).unwrap();
 		p.has_id(true);
 		p.has_data_len(true);
