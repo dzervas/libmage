@@ -18,6 +18,7 @@ use clap::{App, Arg};
 fn main() {
     let mut p = Packet::new(1, 1234, 0, "hello".as_bytes().to_vec()).unwrap();
     p.has_id(true);
+    p.has_data_len(true);
 
     let s = p.serialize().unwrap();
     println!("{:?}", p);

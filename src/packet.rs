@@ -224,3 +224,50 @@ fn bytes_to_u32(bytes: &[u8]) -> u32 {
 
 	buf
 }
+
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use stream::StreamError::PacketDeserializationError;
+
+	#[test]
+    fn config() {
+		let mut config = Config::new();
+		assert_eq!(config.serialize().unwrap(), 0);
+
+		config.first = true;
+		assert_eq!(config.serialize().unwrap(), 0b10000000);
+
+		config.last = true;
+		assert_eq!(config.serialize().unwrap(), 0b11000000);
+
+		config.data_len_len = 3;
+		assert_eq!(config.serialize().unwrap(), 0b11001100);
+
+		config.id_len = 0x3f;
+		assert!(config.serialize().is_err(), "ID Length should be 2 bits (<4)");
+    }
+
+	#[test]
+	fn packet_new() {
+        assert!(Packet::new(1, 1234, 0, vec![2u8; 2]).is_ok(), "A packet should be able to get created with the above config");
+		assert!(Packet::new(0x1f, 1234, 0, vec![2u8; 2]).is_err(), "Channel should be 4 bits (<16)");
+		assert!(Packet::new(0xf, 0x1ffffff, 0, vec![2u8; 2]).is_err(), "ID should be 3 bytes (<0xFFFFFF)");
+		assert!(Packet::new(0xf, 0xffff, 0x1ffffff, vec![2u8; 2]).is_err(), "Sequence should be 3 bytes (<0xFFFFFF)");
+		assert!(Packet::new(0xf, 0xffff, 0xffff, vec![2u8; 0x1ffffff]).is_err(), "Data length should be 3 bytes (<0xFFFFFF)");
+	}
+
+	#[test]
+	fn packet_serialization() {
+		let mut p = Packet::new(1, 1234, 0, vec![2u8; 2]).unwrap();
+		p.has_id(true);
+		p.has_data_len(true);
+
+		let s = p.serialize().unwrap();
+        assert_eq!(s, vec![1, 15, 0, 4, 210, 0, 0, 0, 2, 2]);
+
+		let d = Packet::deserialize(s.as_slice()).unwrap();
+		assert_eq!(p, d);
+	}
+}
