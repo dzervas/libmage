@@ -3,6 +3,19 @@ use packet::Packet;
 use std::collections::HashMap;
 use sodiumoxide::crypto::{kx, secretstream};
 
+#[derive(Debug)]
+pub enum StreamError {
+    RemoteKeyError,
+    SeedKeyError,
+    BadClientSignature,
+    BadServerSignature,
+    PacketError,
+    PacketSerializationError,
+    PacketDeserializationError,
+    EncryptionError,
+    DecryptionError,
+}
+
 pub struct Stream {
     chunk_size: usize,
 
@@ -15,45 +28,58 @@ pub struct Stream {
 }
 
 impl Stream {
-    pub fn new(server: bool, seed: &[u8], remote_key: &[u8]) -> Self {
-        // TODO: Return Result
-        // TODO: error handling
+    pub fn new(server: bool, seed: &[u8], remote_key: &[u8]) -> Result<Self, StreamError> {
         // Remote "certificate" (public key)
-        let remote_pkey = kx::PublicKey::from_slice(remote_key).unwrap();
+        let remote_pkey = match kx::PublicKey::from_slice(remote_key) {
+            Some(k) => k,
+            None => return Err(StreamError::RemoteKeyError)
+        };
+
         // Actual keypair from seed
-        let keys = kx::keypair_from_seed(&kx::Seed::from_slice(seed).unwrap());
-        let session_keys: (kx::SessionKey, kx::SessionKey);
+        let keys = match kx::Seed::from_slice(seed) {
+            Some(k) => kx::keypair_from_seed(&k),
+            None => return Err(StreamError::SeedKeyError)
+        };
+
+        let mut pull_bytes = [0u8; 32];
+        let mut push_bytes = [0u8; 32];
         println!("{}: {:?}", server, keys.0);
 
         // Compute session keys
         if server {
-            session_keys = match kx::server_session_keys(&keys.0, &keys.1, &remote_pkey) {
-                Ok((rx, tx)) => (rx, tx),
-                Err(()) => panic!("bad client signature")
+            match kx::server_session_keys(&keys.0, &keys.1, &remote_pkey) {
+                Ok((rx, tx)) => {
+                    pull_bytes = rx.0;
+                    push_bytes = tx.0;
+                },
+                Err(()) => return Err(StreamError::BadClientSignature)
             };
         } else {
-            session_keys = match kx::client_session_keys(&keys.0, &keys.1, &remote_pkey) {
-                Ok((rx, tx)) => (rx, tx),
-                Err(()) => panic!("bad server signature")
+            match kx::client_session_keys(&keys.0, &keys.1, &remote_pkey) {
+                Ok((rx, tx)) => {
+                    pull_bytes = rx.0;
+                    push_bytes = tx.0;
+                },
+                Err(()) => return Err(StreamError::BadServerSignature)
             };
         }
 
-        let session_bytes = ((session_keys.0).0, (session_keys.1).0);
-        let stream_keys = (secretstream::Key::from_slice(&session_bytes.0).unwrap(), secretstream::Key::from_slice(&session_bytes.1).unwrap());
-        let pusher = secretstream::Stream::init_push(&stream_keys.1).unwrap();
-        let puller = secretstream::Stream::init_pull(&pusher.1, &stream_keys.0).unwrap();
+        let pull_key = secretstream::Key::from_slice(&pull_bytes).unwrap();
+        let push_key = secretstream::Key::from_slice(&push_bytes).unwrap();
+        let pusher = secretstream::Stream::init_push(&push_key).unwrap();
+        let puller = secretstream::Stream::init_pull(&pusher.1, &pull_key).unwrap();
 
-        Stream {
+        Ok(Stream {
             chunk_size: 64usize,
             has_id: false,
             has_sequence: false,
             has_data_len: false,
             enc_stream: pusher.0,
             dec_stream: puller,
-        }
+        })
     }
 
-    pub fn chunk(&mut self, id: u32, channel: u8, data: Vec<u8>) -> Vec<Vec<u8>> {
+    pub fn chunk(&mut self, id: u32, channel: u8, data: Vec<u8>) -> Result<Vec<Vec<u8>>, StreamError> {
         let mut overhead: usize = 2;
         let mut chunks: Vec<Vec<u8>> = Vec::new();
 
@@ -66,79 +92,100 @@ impl Stream {
         if self.has_sequence { overhead += 1 }
         if self.has_data_len { overhead += 1 }
 
-        let chunks_len = |cs| {
-            if cs == 0 {
-                return 0
+        let chunk_size = self.chunk_size;
+        let chunks_len = |ov| {
+            if chunk_size == 0 { return 0 }
+            if data.len() % (chunk_size - ov) > 0 {
+                return (data.len() / (chunk_size - ov)) + 1
             }
-            if data.len() % (cs - overhead) > 0 {
-                return (data.len() / (cs - overhead)) + 1
-            }
-            data.len() / (cs - overhead)
+            data.len() / (chunk_size - ov)
         };
 
-        let data_max_length = |iter, cs| {
-            if iter * (cs - overhead) > data.len() { return data.len() }
-            iter * (cs - overhead)
+        let data_max_length = |iter| {
+            if iter * (chunk_size - overhead) > data.len() { return data.len() }
+            iter * (chunk_size - overhead)
         };
 
-        for i in {0..chunks_len(self.chunk_size)} {
-            let mut buf = Packet::new(
+        for i in {0..chunks_len(overhead)} {
+            let mut buf = match Packet::new(
                 channel,
                 id,
                 i as u32,
-                data[data_max_length(i, self.chunk_size)..data_max_length(i+1, self.chunk_size)].to_vec()
-            );
+                data[data_max_length(i)..data_max_length(i+1)].to_vec()
+            ) {
+                Ok(p) => p,
+                Err(_) => return Err(StreamError::PacketError)
+            };
 
-            if i == 0 { buf.is_first(true) }
-            if i == chunks_len(self.chunk_size) - 1 { buf.is_last(true) }
+            if i == 0 { buf.first(true) }
+            if i == chunks_len(overhead) - 1 { buf.last(true) }
             buf.has_id(self.has_id);
             buf.has_sequence(self.has_sequence);
             buf.has_data_len(self.has_data_len);
 
             // Move this to packet constructor. Add an option of max packet length
-            // TODO: Implement these. Final packet is bigger than expected
-//            if self.has_seq && i == 0xff { overhead += 1 }
-//            if self.has_seq && i == 0xffff { overhead += 1 }
+//            if self.has_sequence && i == 0xff { overhead += 1 }
+//            if self.has_sequence && i == 0xffff { overhead += 1 }
 //            if self.has_data_len && i == 0xff { overhead += 1 }
 //            if self.has_data_len && i == 0xffff { overhead += 1 }
 
-            let cipher = self.enc_stream.push(buf.serialize().as_slice(), None, secretstream::Tag::Message);
-            chunks.push(cipher.unwrap());
+            // TODO: Do this internally? use it instead of overhead?
+            let _ = buf.calculate_lengths();
+
+            let cipher = match buf.serialize() {
+                // TODO: Use the tag field? What's that None?
+                Ok(d) => self.enc_stream.push(d.as_slice(), None, secretstream::Tag::Message),
+                Err(_) => return Err(StreamError::PacketSerializationError)
+            };
+
+            match cipher {
+                Ok(d) => chunks.push(d),
+                Err(_) => return Err(StreamError::EncryptionError)
+            }
+
             println!("Chunked {:?} -> {:?}", buf, chunks.get(i).unwrap());
         }
 
-        chunks
+        Ok(chunks)
     }
 
-    pub fn dechunk(&mut self, chunks: Vec<u8>) -> HashMap<u8, Vec<u8>> {
+    pub fn dechunk(&mut self, chunks: Vec<u8>) -> Result<HashMap<u8, Vec<u8>>, StreamError> {
         let mut data: Vec<Packet> = Vec::new();
         let mut result: HashMap<u8, Vec<u8>>  = HashMap::new();
 
-
-        let chunks_max_length = |iter, cs| {
-            if iter * cs > chunks.len() { return chunks.len() }
-            iter * cs
+        let chunk_size = self.chunk_size;
+        let chunks_max_length = |iter| {
+            if iter * chunk_size > chunks.len() { return chunks.len() }
+            iter * chunk_size
         };
 
-        // TODO: error handling
         for i in {0..(chunks.len() / self.chunk_size) + 1} {
-            let d = &chunks[chunks_max_length(i, self.chunk_size)..chunks_max_length(i+1, self.chunk_size)];
-            let plain = self.dec_stream.pull(d, None);
+            let d = &chunks[chunks_max_length(i)..chunks_max_length(i+1)];
+            // TODO: Use the tag field? What's that None?
+            let plain = match self.dec_stream.pull(d, None) {
+                Ok(d) => d.0,
+                Err(_) => return Err(StreamError::DecryptionError)
+            };
+
             println!("Plain: {:?}", plain);
-            data.push(Packet::deserialize(plain.unwrap().0.as_slice()));
+
+            match Packet::deserialize(plain.as_slice()) {
+                Ok(d) => data.push(d),
+                Err(_) => return Err(StreamError::PacketDeserializationError)
+            }
+
             println!("Dechunked {:?}", data.get(i).unwrap());
-            // TODO: config & id error handling
         }
 
-        // TODO: error handling
-        if data[0].config.seq_len > 0 {
-            data.sort_unstable();
+        match data.get(0) {
+            Some(_) => data.sort_unstable(),
+            _ => {}
         }
 
         for p in data {
             result.entry(p.channel).or_insert(Vec::new()).extend(p.data);
         }
 
-        result
+        Ok(result)
     }
 }

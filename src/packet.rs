@@ -1,5 +1,12 @@
 use std::cmp::Ordering;
 
+#[derive(Debug)]
+pub enum ConfigError {
+	IdOverflow,
+	SequenceOverflow,
+	DataLenOverflow,
+}
+
 #[derive(Eq, Copy, Clone, PartialEq, Debug)]
 pub struct Config {
 	pub first: bool,
@@ -20,16 +27,28 @@ impl Config {
 		}
 	}
 
-	pub fn serialize(&self) -> u8 {
+	pub fn serialize(&self) -> Result<u8, ConfigError> {
 		let mut result: u8 = 0;
-		// TODO: error handling?
+
+		if self.id_len > 0b11 { return Err(ConfigError::IdOverflow) }
+		if self.seq_len > 0b11 { return Err(ConfigError::SequenceOverflow) }
+		if self.data_len_len > 0b11 { return Err(ConfigError::DataLenOverflow) }
 
 		if self.first { result |= 1 << 7 }
 		if self.last { result |= 1 << 6 }
 		result |= (self.seq_len << 4) | (self.data_len_len << 2) | self.id_len;
 
-		result
+		Ok(result)
 	}
+}
+
+#[derive(Debug)]
+pub enum PacketError {
+	ChannelOverflow,
+	IdOverflow,
+	SequenceOverflow,
+	DataLenOverflow,
+	ConfigSerializationError,
 }
 
 #[derive(Eq, Clone, Debug)]
@@ -62,21 +81,30 @@ pub struct Packet {
 }
 
 impl Packet {
-	pub fn new(channel: u8, id: u32, sequence: u32, data: Vec<u8>) -> Self {
-		// TODO: error handling??
+	pub fn new(channel: u8, id: u32, sequence: u32, data: Vec<u8>) -> Result<Self, PacketError> {
+		// Check correct field lengths. Check struct definition
+		if channel > 0xf { return Err(PacketError::ChannelOverflow) }
+		if id > 0xffffff { return Err(PacketError::IdOverflow) }
+		if sequence > 0xffffff { return Err(PacketError::SequenceOverflow) }
+		if data.len() > 0xffffff { return Err(PacketError::DataLenOverflow) }
 
-		Packet {
+		Ok(Packet {
 			channel,
 			config: Config::new(),
 			id,
 			sequence,
 			data_len: 0,
 			data,
-		}
+		})
 	}
 
-	fn calculate_lengths(&mut self) {
-		// TODO: error handling?
+	pub fn calculate_lengths(&mut self) -> Result<usize, PacketError> {
+		// Check correct field lengths. Check struct definition
+		if self.channel > 0xf { return Err(PacketError::ChannelOverflow) }
+		if self.id > 0xffffff { return Err(PacketError::IdOverflow) }
+		if self.sequence > 0xffffff { return Err(PacketError::SequenceOverflow) }
+		if self.data.len() > 0xffffff { return Err(PacketError::DataLenOverflow) }
+
 		self.data_len = self.data.len() as u32;
 
 		let calc_bytes = |x| {
@@ -87,6 +115,8 @@ impl Packet {
 		if self.config.id_len > 0 { self.config.id_len = calc_bytes(self.id); }
 		if self.config.data_len_len > 0 { self.config.data_len_len = calc_bytes(self.data_len); }
 		if self.config.seq_len > 0 { self.config.seq_len = calc_bytes(self.sequence); }
+
+		Ok((2 + self.config.id_len + self.config.seq_len + self.config.data_len_len) as usize)
 	}
 
 	pub fn has_id(&mut self, v: bool) {
@@ -104,20 +134,22 @@ impl Packet {
 		else { self.config.seq_len = 0 }
 	}
 
-	pub fn is_first(&mut self, v: bool) {
+	pub fn first(&mut self, v: bool) {
 		self.config.first = v;
 	}
 
-	pub fn is_last(&mut self, v: bool) {
+	pub fn last(&mut self, v: bool) {
 		self.config.last = v;
 	}
 
-	pub fn serialize(&mut self) -> Vec<u8> {
-		// Hardcoded protocol version
+	pub fn serialize(&mut self) -> Result<Vec<u8>, PacketError> {
+		// Hardcoded protocol version  vvv
 		let mut result: Vec<u8> = vec![0x00 | self.channel];
 
-		self.calculate_lengths();
-		result.push(self.config.serialize());
+		match self.config.serialize() {
+			Ok(d) => result.push(d),
+			Err(_) => return Err(PacketError::ConfigSerializationError)
+		}
 
 		for i in (0..self.config.id_len).rev() {
 			result.push(((self.id >> (8*i as u32)) & 0xff) as u8);
@@ -133,10 +165,10 @@ impl Packet {
 
 		result.append(self.data.to_vec().as_mut());
 
-		result.clone()
+		Ok(result.clone())
 	}
 
-	pub fn deserialize(data: &[u8] ) -> Self {
+	pub fn deserialize(data: &[u8] ) -> Result<Self, PacketError> {
 		let channel = data[0];
 		let config = Config{
 			first: (data[1] & (1 << 7)) > 0,
@@ -150,17 +182,17 @@ impl Packet {
 		let data_len: u32 = bytes_to_u32(&data[(2 + config.seq_len) as usize..(offset - config.id_len) as usize]);
 		let id: u32 = bytes_to_u32(&data[(offset - config.id_len) as usize..offset as usize]);
 
+		// Can't detect errors here... NaCl should check for errors (?)
+        // Return Ok() for consistency
 
-		// TODO: error handling
-
-		Packet{
+		Ok(Packet{
 			channel,
 			config,
 			data: data[offset as usize..data.len() as usize].to_vec(),
 			sequence,
 			data_len,
 			id
-		}
+		})
 	}
 }
 

@@ -1,5 +1,5 @@
 use std::io::{Read, Write, Error, Result, ErrorKind};
-use stream::Stream;
+use stream::{Stream, StreamError};
 use channel::Channel;
 use std::sync::mpsc::{Sender, Receiver, channel as ch};
 use std::collections::HashMap;
@@ -12,12 +12,15 @@ pub struct Connection<'conn> {
 }
 
 impl<'conn> Connection<'conn> {
-    pub fn new(reader: &'conn mut impl Read, writer: &'conn mut impl Write, server: bool, seed: &[u8], remote_key: &[u8]) -> Self {
-        Connection {
-            stream: Stream::new(server, seed, remote_key),
-            reader,
-            writer,
-            channels: HashMap::new()
+    pub fn new(reader: &'conn mut impl Read, writer: &'conn mut impl Write, server: bool, seed: &[u8], remote_key: &[u8]) -> std::result::Result<Self, StreamError> {
+        match Stream::new(server, seed, remote_key) {
+            Ok(stream) => Ok(Connection {
+                stream,
+                reader,
+                writer,
+                channels: HashMap::new()
+            }),
+            Err(e) => Err(e)
         }
     }
 
@@ -42,12 +45,17 @@ impl<'conn> Connection<'conn> {
 // TODO: Add some kind of warning that this is using default id 0 and channel 0
 impl Read for Connection<'_> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        let mut original = [0u8; 32];
+        let mut original = [0u8; 256];
         // TODO: Handle too small buffer
-        let _result = self.reader.read(&mut original);
+        let size = match self.reader.read(&mut original) {
+            Ok(d) => d,
+            Err(e) => return Err(e)
+        };
 
-        // TODO: Error handling
-        let dechunked = self.stream.dechunk(original.to_vec());
+        let dechunked = match self.stream.dechunk(original[..size].to_vec()) {
+            Ok(d) => d,
+            Err(_)  => return Err(Error::new(ErrorKind::InvalidData, "Error while dechunking data"))
+        };
         let bytes = match dechunked.get(&0u8) {
             Some(d) => d,
             None => return Err(Error::new(ErrorKind::UnexpectedEof, "No data for default channel 0"))
@@ -65,12 +73,18 @@ impl Read for Connection<'_> {
 impl Write for Connection<'_> {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
         let mut result: Result<usize> = Ok(0);
-        for d in self.stream.chunk(0, 0, buf.to_vec()) {
+        let chunks = match self.stream.chunk(0, 0, buf.to_vec()) {
+            Ok(c) => c,
+            Err(_) => return Err(Error::new(ErrorKind::InvalidData, "Error while chunking data"))
+        };
+
+        for d in chunks {
             result = match self.writer.write(d.as_slice()) {
                 Ok(_) => Ok(buf.len()),
-                Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string())),
+                Err(e) => return Err(e),
             };
         }
+
         result
     }
 
