@@ -12,9 +12,9 @@ pub struct Connection<'conn> {
 }
 
 impl<'conn> Connection<'conn> {
-    pub fn new(reader: &'conn mut impl Read, writer: &'conn mut impl Write, chunk_size: usize, has_id: bool, has_sequence: bool, has_data_len: bool) -> Self {
+    pub fn new(reader: &'conn mut impl Read, writer: &'conn mut impl Write, server: bool, seed: &[u8], remote_key: &[u8]) -> Self {
         Connection {
-            stream: Stream::new(chunk_size, has_id, has_sequence, has_data_len),
+            stream: Stream::new(server, seed, remote_key),
             reader,
             writer,
             channels: HashMap::new()

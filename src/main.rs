@@ -1,4 +1,5 @@
 extern crate clap;
+extern crate sodiumoxide;
 
 mod packet;
 mod stream;
@@ -25,14 +26,15 @@ fn main() {
     let d = Packet::deserialize(&s[..]);
     println!("{:?}", d);
 
-    let st = Stream::new(10, true, true, true);
-    println!("{:?}", st);
+    let mut st = Stream::new(true, vec![1; 32].as_slice(), vec![252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6].as_slice());
+//    println!("{:?}", st);
 
     let cs = st.chunk(13, 200, "hello world wow".as_bytes().to_vec());
     println!("{:?}", cs);
+    let cipher = cs.get(0).unwrap();
 
-    let buf: Vec<u8> = vec![13, 129, 10, 104, 101, 108, 108, 111, 32, 119, 13, 1, 10, 111, 114, 108, 100, 32, 119, 111, 13, 65, 10, 119];
-    let ds = st.dechunk(buf);
+    let mut client = Stream::new(false, vec![2; 32].as_slice(), vec![171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111].as_slice());
+    let ds = client.dechunk(cipher.to_vec());
     println!("{:?}", ds);
     println!("----------------------------------------------------------------------------------");
 
@@ -55,7 +57,7 @@ fn main() {
     }
     let mut writer = tcp.try_clone().unwrap();
     let mut reader = tcp.try_clone().unwrap();
-    let mut conn = Connection::new(&mut reader, &mut writer, 10, true, true, true);
+    let mut conn = Connection::new(&mut reader, &mut writer, true, vec![1; 32].as_slice(), vec![2; 32].as_slice());
 
     conn.write("lala".as_bytes());
     let mut buf = [0u8; 32];
