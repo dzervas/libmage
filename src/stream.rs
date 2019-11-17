@@ -17,7 +17,7 @@ pub enum StreamError {
 }
 
 pub struct Stream {
-    chunk_size: usize,
+    pub chunk_size: usize,
 
     pub has_id: bool,
     pub has_sequence: bool,
@@ -70,7 +70,7 @@ impl Stream {
         let puller = secretstream::Stream::init_pull(&pusher.1, &pull_key).unwrap();
 
         Ok(Stream {
-            chunk_size: 64usize,
+            chunk_size: 256usize,
             has_id: false,
             has_sequence: false,
             has_data_len: false,
@@ -187,5 +187,47 @@ impl Stream {
         }
 
         Ok(result)
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::borrow::BorrowMut;
+
+    // Known keys: vec![1; 32] -> public vec![171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111]
+    // Known keys: vec![2; 32] -> public vec![252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6]
+
+    #[test]
+    fn stream_new() {
+        assert!(Stream::new(true, vec![1; 32].as_slice(), vec![2; 32].as_slice()).is_ok(), "A stream should be able to get created with the above config");
+        assert!(Stream::new(false, vec![1; 31].as_slice(), vec![2; 32].as_slice()).is_err(), "Key seed is too small, must be 32 bytes");
+        assert!(Stream::new(true, vec![1; 33].as_slice(), vec![2; 32].as_slice()).is_err(), "Key seed is too big, must be 32 bytes");
+        assert!(Stream::new(false, vec![1; 32].as_slice(), vec![2; 31].as_slice()).is_err(), "Remote key is too small, must be 32 bytes");
+        assert!(Stream::new(true, vec![1; 32].as_slice(), vec![2; 33].as_slice()).is_err(), "Remote key seed is too big, must be 32 bytes");
+    }
+
+    #[test]
+    fn stream_chunking() {
+        let mut server = Stream::new(true, vec![2; 32].as_slice(), vec![171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111].as_slice()).unwrap();
+        let mut client = Stream::new(false, vec![1; 32].as_slice(), vec![252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6].as_slice()).unwrap();
+
+        test_stream_chunking(true, client.borrow_mut(), server.borrow_mut(), 13, 8, vec![4u8; 8]);
+        test_stream_chunking(true, server.borrow_mut(), client.borrow_mut(), 13, 8, vec![4u8; 8]);
+    }
+
+    fn test_stream_chunking(succ: bool, a: &mut Stream, b: &mut Stream, id: u32, ch: u8, data: Vec<u8>) {
+        let chunked = a.chunk(id, ch, data.clone()).unwrap();
+        let mut aligned: Vec<u8> = Vec::new();
+
+        for mut chunk in chunked {
+            // TODO: Find a way to take data from chunks to test each chunk
+            assert_eq!(succ, b.dechunk(chunk.clone()).is_ok());
+            aligned.append(chunk.as_mut());
+        }
+
+        if succ { assert_eq!(&data, b.dechunk(aligned).unwrap().get(&ch).unwrap()); }
+        else { assert_ne!(&data, b.dechunk(aligned).unwrap().get(&ch).unwrap()); }
     }
 }

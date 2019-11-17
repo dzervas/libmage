@@ -229,7 +229,6 @@ fn bytes_to_u32(bytes: &[u8]) -> u32 {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use stream::StreamError::PacketDeserializationError;
 
 	#[test]
     fn config() {
