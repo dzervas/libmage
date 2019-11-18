@@ -36,7 +36,7 @@ impl Config {
 
 		if self.first { result |= 1 << 7 }
 		if self.last { result |= 1 << 6 }
-		result |= (self.seq_len << 4) | (self.data_len_len << 2) | self.id_len;
+		result |= (self.id_len << 4) | (self.seq_len << 2) | self.data_len_len;
 
 		Ok(result)
 	}
@@ -173,14 +173,14 @@ impl Packet {
 		let config = Config{
 			first: (data[1] & (1 << 7)) > 0,
 			last: (data[1] & (1 << 6)) > 0,
-			seq_len: (data[1] & 0b110000) >> 4,
-			data_len_len: (data[1] & 0b1100) >> 2,
-			id_len: (data[1] & 0b11)
+			id_len: (data[1] & 0b110000) >> 4,
+			seq_len: (data[1] & 0b1100) >> 2,
+			data_len_len: data[1] & 0b11,
 		};
-		let offset = 2 + config.seq_len + config.data_len_len + config.id_len;
-		let sequence: u32 = bytes_to_u32(&data[2..(2 + config.seq_len) as usize]);
-		let data_len: u32 = bytes_to_u32(&data[(2 + config.seq_len) as usize..(offset - config.id_len) as usize]);
-		let id: u32 = bytes_to_u32(&data[(offset - config.id_len) as usize..offset as usize]);
+		let offset = 2 + config.id_len + config.seq_len + config.data_len_len;
+		let id: u32 = bytes_to_u32(&data[2..(2 + config.id_len) as usize]);
+		let sequence: u32 = bytes_to_u32(&data[(2 + config.id_len) as usize..(2 + config.id_len + config.seq_len) as usize]);
+		let data_len: u32 = bytes_to_u32(&data[(2 + config.id_len + config.seq_len) as usize..offset as usize]);
 
 		// Can't detect errors here... NaCl should check for errors (?)
         // Return Ok() for consistency
@@ -242,7 +242,7 @@ mod tests {
 		assert_eq!(config.serialize().unwrap(), 0b11000000);
 
 		config.data_len_len = 3;
-		assert_eq!(config.serialize().unwrap(), 0b11001100);
+		assert_eq!(config.serialize().unwrap(), 0b11000011);
 
 		config.id_len = 0x3f;
 		assert!(config.serialize().is_err(), "ID Length should be 2 bits (<4)");
@@ -259,14 +259,28 @@ mod tests {
 
 	#[test]
 	fn serialize_deserialize() {
-		let mut p = Packet::new(1, 1234, 0, vec![2u8; 2]).unwrap();
+		let mut p = Packet::new(1, 0x1234, 7, vec![2u8; 3]).unwrap();
 		p.has_id(true);
 		p.has_data_len(true);
+        p.has_sequence(true);
+
+		p.calculate_lengths();
 
 		let s = p.serialize().unwrap();
-        assert_eq!(s, vec![1, 15, 0, 4, 210, 0, 0, 0, 2, 2]);
+        assert_eq!(s, vec![1, 0b00100101, 0x12, 0x34, 7, 3, 2, 2, 2]);
 
 		let d = Packet::deserialize(s.as_slice()).unwrap();
 		assert_eq!(p, d);
+
+        // On purpose does not call calculate_lengths
+		p.config.id_len = 10;
+		assert!(p.serialize().is_err(), "Config has invalid ID Length");
+	}
+
+	#[test]
+	fn bytes_u32() {
+		assert_eq!(bytes_to_u32(vec![1].as_slice()), 1u32);
+		assert_eq!(bytes_to_u32(vec![0x10, 0xff].as_slice()), 0x10ff);
+		assert_eq!(bytes_to_u32(vec![0x12, 0x34, 0x56, 0x78].as_slice()), 0x12345678);
 	}
 }

@@ -162,9 +162,7 @@ impl Stream {
         for i in {0..(chunks.len() / self.chunk_size) + 1} {
             let cipher = &chunks[chunks_max_length(i)..chunks_max_length(i+1)];
             // TODO: Use the tag field? What's that None?
-            let asdf = self.dec_stream.pull(cipher, None);
-            println!("{:?}", asdf);
-            let plain = match asdf {
+            let plain = match self.dec_stream.pull(cipher, None) {
                 Ok(d) => d.0,
                 Err(_) => return Err(StreamError::DecryptionError)
             };
