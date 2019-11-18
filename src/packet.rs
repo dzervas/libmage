@@ -93,7 +93,7 @@ impl Packet {
 			config: Config::new(),
 			id,
 			sequence,
-			data_len: 0,
+			data_len: data.len() as u32,
 			data,
 		})
 	}
@@ -246,15 +246,41 @@ mod tests {
 
 		config.id_len = 0x3f;
 		assert!(config.serialize().is_err(), "ID Length should be 2 bits (<4)");
+		config.id_len = 1;
+		config.seq_len = 0x3f;
+		assert!(config.serialize().is_err(), "Sequence Length should be 2 bits (<4)");
+		config.seq_len = 1;
+		config.data_len_len = 0x3f;
+		assert!(config.serialize().is_err(), "data_len Length should be 2 bits (<4)");
     }
 
 	#[test]
 	fn packet() {
         assert!(Packet::new(1, 1234, 0, vec![2u8; 2]).is_ok(), "A packet should be able to get created with the above config");
-		assert!(Packet::new(0x1f, 1234, 0, vec![2u8; 2]).is_err(), "Channel should be 4 bits (<16)");
-		assert!(Packet::new(0xf, 0x1ffffff, 0, vec![2u8; 2]).is_err(), "ID should be 3 bytes (<0xFFFFFF)");
-		assert!(Packet::new(0xf, 0xffff, 0x1ffffff, vec![2u8; 2]).is_err(), "Sequence should be 3 bytes (<0xFFFFFF)");
-		assert!(Packet::new(0xf, 0xffff, 0xffff, vec![2u8; 0x1ffffff]).is_err(), "Data length should be 3 bytes (<0xFFFFFF)");
+		assert!(Packet::new(0x1f, 1234, 0, vec![2u8; 2]).is_err(), "Channel should be 4 bits (<=0x0F)");
+		assert!(Packet::new(0xf, 0x1ffffff, 0, vec![2u8; 2]).is_err(), "ID should be 3 bytes (<=0xFFFFFF)");
+		assert!(Packet::new(0xf, 0xffff, 0x1ffffff, vec![2u8; 2]).is_err(), "Sequence should be 3 bytes (<=0xFFFFFF)");
+		assert!(Packet::new(0xf, 0xffff, 0xffff, vec![2u8; 0x1ffffff]).is_err(), "Data length should be 3 bytes (<=0xFFFFFF)");
+	}
+
+	#[test]
+	fn order() {
+		let mut p1 = Packet::new(1, 0x1234, 1, vec![2u8; 3]).unwrap();
+        p1.has_sequence(true);
+		let mut p2 = Packet::new(1, 0x1234, 2, vec![2u8; 3]).unwrap();
+		p2.has_sequence(true);
+		let mut p3 = Packet::new(1, 0x1234, 2, vec![2u8; 3]).unwrap();
+		p3.has_sequence(true);
+		let mut p4 = Packet::new(1, 0x1234, 7, vec![2u8; 3]).unwrap();
+		p3.has_sequence(true);
+
+		assert_eq!(p2, p3);
+		assert_ne!(p1, p2);
+        assert!(p2 > p1, "p2 is greater than p1 because it has higher sequence");
+
+		assert_eq!(p1.cmp(&p4), Ordering::Less);
+		assert_eq!(p2.cmp(&p1), Ordering::Greater);
+		assert_eq!(p2.cmp(&p3), Ordering::Equal);
 	}
 
 	#[test]
@@ -264,7 +290,7 @@ mod tests {
 		p.has_data_len(true);
         p.has_sequence(true);
 
-		p.calculate_lengths();
+		p.calculate_lengths().unwrap();
 
 		let s = p.serialize().unwrap();
         assert_eq!(s, vec![1, 0b00100101, 0x12, 0x34, 7, 3, 2, 2, 2]);
@@ -272,9 +298,32 @@ mod tests {
 		let d = Packet::deserialize(s.as_slice()).unwrap();
 		assert_eq!(p, d);
 
-        // On purpose does not call calculate_lengths
+		p.has_id(false);
+		p.has_data_len(false);
+		p.has_sequence(false);
+		p.calculate_lengths().unwrap();
+		assert_eq!(p.serialize().unwrap(), vec![1, 0, 2, 2, 2]);
+
+		// On purpose does not call calculate_lengths
 		p.config.id_len = 10;
 		assert!(p.serialize().is_err(), "Config has invalid ID Length");
+	}
+
+	#[test]
+	fn calculate_lengths() {
+		let mut p = Packet::new(1, 0x1234, 7, vec![2u8; 3]).unwrap();
+        assert!(p.calculate_lengths().is_ok(), "All lengths are valid!");
+        p.channel = 0x1f;
+		assert!(p.calculate_lengths().is_err(), "Channel should be 4 bits (<16)");
+		p.channel = 0x1;
+        p.id = 0x1ffffff;
+		assert!(p.calculate_lengths().is_err(), "ID should be 3 bytes (<= 0xFFFFFF)");
+		p.id = 0x1;
+		p.sequence = 0x1ffffff;
+		assert!(p.calculate_lengths().is_err(), "Sequence should be 3 bytes (<= 0xFFFFFF)");
+		p.sequence = 0x1;
+		p.data = vec![1; 0x1ffffff];
+		assert!(p.calculate_lengths().is_err(), "Data length should be 3 bytes (<= 0xFFFFFF)");
 	}
 
 	#[test]
