@@ -272,7 +272,7 @@ mod tests {
 		let mut p3 = Packet::new(1, 0x1234, 2, vec![2u8; 3]).unwrap();
 		p3.has_sequence(true);
 		let mut p4 = Packet::new(1, 0x1234, 7, vec![2u8; 3]).unwrap();
-		p3.has_sequence(true);
+		p4.has_sequence(true);
 
 		assert_eq!(p2, p3);
 		assert_ne!(p1, p2);
