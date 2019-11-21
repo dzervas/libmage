@@ -20,7 +20,9 @@ pub enum StreamError {
 enum State {
     // TODO: Add state that the header is sent OR received before full init
     Uninitialized,
-    Initialized
+    SentHeader,
+    RecvHeader,
+    Done,
 }
 
 pub struct Stream {
@@ -122,9 +124,10 @@ impl Stream {
             iter * (chunk_size - overhead)
         };
 
-        if self.state == State::Uninitialized {
-            println!("{:?}", self.header);
+        if self.state != State::Done && self.state != State::SentHeader {
             chunks.push(self.header.0.to_vec());
+            if self.state == State::RecvHeader { self.state = State::Done }
+            else { self.state = State::SentHeader }
         }
 
         for i in {0..chunks_len(overhead)} {
@@ -167,7 +170,7 @@ impl Stream {
                 Err(_) => return Err(StreamError::EncryptionError)
             }
 
-            println!("Chunked {:?} -> {:?}", buf, chunks.get(i+1).unwrap());
+            println!("Chunked {:?}", buf);
         }
 
         Ok(chunks)
@@ -177,12 +180,14 @@ impl Stream {
         let mut data: Vec<Packet> = Vec::new();
         let mut result: HashMap<u8, Vec<u8>>  = HashMap::new();
 
-        if self.state == State::Uninitialized {
+        if self.state != State::Done && self.state != State::RecvHeader {
             let header = secretstream::Header::from_slice(&chunks[0..secretstream::HEADERBYTES]).unwrap();
             println!("{:?}", header);
             self.dec_stream = secretstream::Stream::init_pull(&header, &self.dec_key).unwrap();
             chunks = chunks[secretstream::HEADERBYTES..].to_vec();
-            self.state = State::Initialized;
+
+            if self.state == State::SentHeader { self.state = State::Done }
+            else { self.state = State::RecvHeader }
         }
 
         let chunk_size = self.chunk_size;
@@ -247,10 +252,10 @@ mod tests {
         let mut server = Stream::new(true, &[2; 32], vec![171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111].as_slice()).unwrap();
         let mut client = Stream::new(false, &[1; 32], vec![252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6].as_slice()).unwrap();
 
-//        test_stream_chunking(true, client.borrow_mut(), server.borrow_mut(), 0, 0, Vec::new());
-//        test_stream_chunking(true, server.borrow_mut(), client.borrow_mut(), 0, 0, Vec::new());
+//        test_stream_chunking(false, client.borrow_mut(), server.borrow_mut(), 0, 0, Vec::new());
+//        test_stream_chunking(false, server.borrow_mut(), client.borrow_mut(), 0, 0, Vec::new());
         test_stream_chunking(true, client.borrow_mut(), server.borrow_mut(), 13, 8, vec![4u8; 512]);
-//        test_stream_chunking(true, server.borrow_mut(), client.borrow_mut(), 13, 8, vec![4u8; 8]);
+        test_stream_chunking(true, server.borrow_mut(), client.borrow_mut(), 13, 8, vec![4u8; 512]);
     }
 
     fn test_stream_chunking(succ: bool, a: &mut Stream, b: &mut Stream, id: u32, ch: u8, data: Vec<u8>) {
@@ -259,6 +264,7 @@ mod tests {
 
         for mut chunk in chunked {
             // TODO: Find a way to take data from chunks to test each chunk
+            // This does not work as the first chunk of the first test is the header
 //            assert_eq!(succ, b.dechunk(chunk.clone()).is_ok());
             aligned.append(chunk.as_mut());
         }
