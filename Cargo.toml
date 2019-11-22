@@ -1,5 +1,5 @@
 [package]
-name = "mage-rs"
+name = "mage"
 version = "0.1.0"
 authors = ["Dimitris Zervas <dzervas@dzervas.gr>"]
 
