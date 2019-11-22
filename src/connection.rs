@@ -44,7 +44,7 @@ impl<'conn> Connection<'conn> {
 
 // TODO: Add some kind of warning that this is using default id 0 and channel 0
 impl Read for Connection<'_> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+    fn read(&mut self, mut buf: &mut [u8]) -> Result<usize> {
         let mut original = [0u8; 256];
         // TODO: Handle too small buffer
         let size = match self.reader.read(&mut original) {
@@ -58,15 +58,14 @@ impl Read for Connection<'_> {
         };
         let bytes = match dechunked.get(&0u8) {
             Some(d) => d,
-            None => return Err(Error::new(ErrorKind::UnexpectedEof, "No data for default channel 0"))
+            None => return Ok(0usize)
         };
 
         if bytes.len() > buf.len() {
             return Err(Error::new(ErrorKind::WouldBlock, "Buffer is too small"))
         }
 
-        buf.copy_from_slice(bytes.as_slice());
-        Ok(bytes.len())
+        buf.write(bytes.as_slice())
     }
 }
 
@@ -90,5 +89,60 @@ impl Write for Connection<'_> {
 
     fn flush(&mut self) -> Result<()> {
         self.writer.flush()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{TcpListener, TcpStream, Shutdown};
+    use std::thread::{spawn, sleep};
+    use std::time::Duration;
+
+    // Known keys: vec![1; 32] -> public vec![171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111]
+    // Known keys: vec![2; 32] -> public vec![252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6]
+
+    #[test]
+    fn read_write() {
+        let listen = spawn(|| {
+            let listen = TcpListener::bind("localhost:65432").unwrap();
+            let sock = listen.accept().unwrap().0;
+
+            let mut reader = sock.try_clone().unwrap();
+            let mut writer = sock.try_clone().unwrap();
+
+            let mut conn = Connection::new(&mut reader, &mut writer, true, &[2; 32], &[171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111]).unwrap();
+
+            let mut buf = [0u8; 2048];
+            let mut size = 1usize;
+
+            while size > 0 {
+                size = conn.read(&mut buf).unwrap();
+                conn.write(&buf[..size]).unwrap();
+                conn.flush().unwrap();
+            }
+
+            sock.shutdown(Shutdown::Both);
+        });
+
+        // Shitty hack to wait for sock to bind
+        sleep(Duration::from_secs(1));
+
+        let sock = TcpStream::connect("localhost:65432").unwrap();
+        let mut reader = sock.try_clone().unwrap();
+        let mut writer = sock.try_clone().unwrap();
+
+        let mut conn = Connection::new(&mut reader, &mut writer, false, &[1; 32], &[252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6]).unwrap();
+
+        let mut buf = [0u8; 2048];
+
+        assert!(conn.write(&[7; 100]).is_ok(), "Can't write 100 bytes");
+        conn.flush().unwrap();
+        assert!(conn.read(&mut buf).is_ok(), "Can't read 100 bytes");
+        assert_eq!(buf[0..100].to_vec(), vec![7; 100]);
+
+        // Cleanup
+        sock.shutdown(Shutdown::Both);
+        listen.join().unwrap();
     }
 }

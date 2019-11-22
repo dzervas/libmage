@@ -86,9 +86,10 @@ impl Stream {
 
         Ok(Stream {
             chunk_size: 256usize,
-            has_id: false,
+            has_id: true,
+            // BUG: When has_sequence = true chunk_dechunk fails...
             has_sequence: false,
-            has_data_len: false,
+            has_data_len: true,
             enc_stream: pusher,
             dec_stream: puller,
             state: State::Uninitialized,
@@ -159,14 +160,18 @@ impl Stream {
             let cipher = match buf.serialize() {
                 // TODO: Use the tag field? What's that None?
                 Ok(d) => {
-                    if i == chunks_len(overhead) - 1 { self.enc_stream.push(d.as_slice(), None, secretstream::Tag::Push) }
-                    else { self.enc_stream.push(d.as_slice(), None, secretstream::Tag::Message) }
+                    self.enc_stream.push(d.as_slice(), None, secretstream::Tag::Message)
+//                    if i == chunks_len(overhead) - 1 { self.enc_stream.push(d.as_slice(), None, secretstream::Tag::Push) }
+//                    else { self.enc_stream.push(d.as_slice(), None, secretstream::Tag::Message) }
                 },
                 Err(_) => return Err(StreamError::PacketSerializationError)
             };
 
             match cipher {
-                Ok(d) => chunks.push(d),
+                Ok(d) => {
+                    println!("Cipher: {:?}", d);
+                    chunks.push(d)
+                },
                 Err(_) => return Err(StreamError::EncryptionError)
             }
 
@@ -182,7 +187,6 @@ impl Stream {
 
         if self.state != State::Done && self.state != State::RecvHeader {
             let header = secretstream::Header::from_slice(&chunks[0..secretstream::HEADERBYTES]).unwrap();
-            println!("{:?}", header);
             self.dec_stream = secretstream::Stream::init_pull(&header, &self.dec_key).unwrap();
             chunks = chunks[secretstream::HEADERBYTES..].to_vec();
 
@@ -196,8 +200,17 @@ impl Stream {
             iter * chunk_size
         };
 
-        for i in {0..(chunks.len() / self.chunk_size) + 1} {
+        let num_chunks = || {
+            if chunk_size == 0 { return 0 }
+            if chunks.len() % chunk_size  > 0 {
+                return (chunks.len() / chunk_size) + 1
+            }
+            chunks.len() / chunk_size
+        };
+
+        for i in {0..num_chunks()} {
             let cipher = &chunks[chunks_max_length(i)..chunks_max_length(i+1)];
+            println!("Decipher: {:?}", cipher);
             // TODO: Use the tag field? What's that None?
             let plain = match self.dec_stream.pull(cipher, None) {
                 Ok(d) => d.0,
@@ -211,6 +224,7 @@ impl Stream {
 
             println!("Dechunked {:?}", data.get(i).unwrap());
         }
+        println!("Total: {}", data.len());
 
         match data.get(0) {
             Some(d) => {
@@ -254,10 +268,13 @@ mod tests {
 
 //        test_stream_chunking(false, client.borrow_mut(), server.borrow_mut(), 0, 0, Vec::new());
 //        test_stream_chunking(false, server.borrow_mut(), client.borrow_mut(), 0, 0, Vec::new());
+        test_stream_chunking(true, client.borrow_mut(), server.borrow_mut(), 13, 8, vec![3u8; 4]);
+        test_stream_chunking(true, server.borrow_mut(), client.borrow_mut(), 13, 8, vec![3u8; 4]);
         test_stream_chunking(true, client.borrow_mut(), server.borrow_mut(), 13, 8, vec![4u8; 512]);
         test_stream_chunking(true, server.borrow_mut(), client.borrow_mut(), 13, 8, vec![4u8; 512]);
     }
 
+    #[cfg_attr(tarpaulin, skip)]
     fn test_stream_chunking(succ: bool, a: &mut Stream, b: &mut Stream, id: u32, ch: u8, data: Vec<u8>) {
         let chunked = a.chunk(id, ch, data.clone()).unwrap();
         let mut aligned: Vec<u8> = Vec::new();
