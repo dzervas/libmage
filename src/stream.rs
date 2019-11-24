@@ -87,7 +87,7 @@ impl Stream {
         Ok(Stream {
             chunk_size: 256usize,
             has_id: true,
-            // BUG: When has_sequence = true chunk_dechunk fails...
+            // BUG: When has_sequence = true, test::chunk_dechunk fails...
             has_sequence: false,
             has_data_len: true,
             enc_stream: pusher,
@@ -224,7 +224,6 @@ impl Stream {
 
             println!("Dechunked {:?}", data.get(i).unwrap());
         }
-        println!("Total: {}", data.len());
 
         match data.get(0) {
             Some(d) => {
@@ -272,6 +271,8 @@ mod tests {
         test_stream_chunking(true, server.borrow_mut(), client.borrow_mut(), 13, 8, vec![3u8; 4]);
         test_stream_chunking(true, client.borrow_mut(), server.borrow_mut(), 13, 8, vec![4u8; 512]);
         test_stream_chunking(true, server.borrow_mut(), client.borrow_mut(), 13, 8, vec![4u8; 512]);
+//        test_stream_chunking(false, server.borrow_mut(), client.borrow_mut(), 0x1FFFFFF, 8, vec![4u8; 512]);
+//        test_stream_chunking(false, server.borrow_mut(), client.borrow_mut(), 0x1FFFF, 0x1F, vec![4u8; 512]);
     }
 
     #[cfg_attr(tarpaulin, skip)]

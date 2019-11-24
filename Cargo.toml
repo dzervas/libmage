@@ -6,3 +6,4 @@ authors = ["Dimitris Zervas <dzervas@dzervas.gr>"]
 [dependencies]
 clap = "*"
 sodiumoxide = "*"
+crossbeam-channel = "*"

@@ -1,4 +1,6 @@
 extern crate clap;
+#[macro_use]
+extern crate crossbeam_channel;
 extern crate sodiumoxide;
 
 mod packet;
@@ -59,7 +61,7 @@ fn main() {
     }
     let mut writer = tcp.try_clone().unwrap();
     let mut reader = tcp.try_clone().unwrap();
-    let mut conn = Connection::new(&mut reader, &mut writer, true, vec![1; 32].as_slice(), vec![2; 32].as_slice()).unwrap();
+    let mut conn = Connection::new(10, &mut reader, &mut writer, true, vec![1; 32].as_slice(), vec![2; 32].as_slice()).unwrap();
 
     println!("Write: {:?}", conn.write("lala".as_bytes()));
     let mut buf = [0u8; 32];
