@@ -3,10 +3,10 @@ extern crate clap;
 extern crate crossbeam_channel;
 extern crate sodiumoxide;
 
-mod packet;
+pub mod packet;
 mod stream;
 mod connection;
-mod channel;
+pub mod channel;
 
 use packet::Packet;
 use stream::Stream;

@@ -1,216 +1,132 @@
 use std::cmp::Ordering;
+#[macro_use]
+use custom_error::custom_error;
 
-#[derive(Debug)]
-pub enum ConfigError {
-	IdOverflow,
-	SequenceOverflow,
-	DataLenOverflow,
-}
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+custom_error!{FieldOverflowError{field: &'static str} = "Field {field} is more than 3 bytes. It must be 3 bytes (<=0xFFFFFF) max"}
 
-#[derive(Eq, Copy, Clone, PartialEq, Debug)]
-pub struct Config {
-	pub first: bool,
-	pub last: bool,
-	pub seq_len: u8, // 2 bits
-	pub data_len_len: u8, // 2 bits
-	pub id_len: u8, // 2 bits
-}
-
-impl Config {
-	pub fn new() -> Config {
-		Config {
-			first: false,
-			last: false,
-			seq_len: 0,
-			data_len_len: 0,
-			id_len: 0
-		}
-	}
-
-	pub fn serialize(&self) -> Result<u8, ConfigError> {
-		let mut result: u8 = 0;
-
-		if self.id_len > 0b11 { return Err(ConfigError::IdOverflow) }
-		if self.seq_len > 0b11 { return Err(ConfigError::SequenceOverflow) }
-		if self.data_len_len > 0b11 { return Err(ConfigError::DataLenOverflow) }
-
-		if self.first { result |= 1 << 7 }
-		if self.last { result |= 1 << 6 }
-		result |= (self.id_len << 4) | (self.seq_len << 2) | self.data_len_len;
-
-		Ok(result)
-	}
-}
-
-#[derive(Debug)]
-pub enum PacketError {
-	ChannelOverflow,
-	IdOverflow,
-	SequenceOverflow,
-	DataLenOverflow,
-	ConfigSerializationError,
-}
-
-#[derive(Eq, Clone, Debug)]
-pub struct Packet {
-	// --------- Channel & Version --------- 1 Byte
+#[derive(Eq, Clone, Copy, Debug)]
+pub struct Packet<'a> {
 	// The protocol version is crammed in here during serialization
 	// and removed during deserialization
 	// 4 Bits : Protocol version - not accessible
 	// 4 Bits : Channel ID
-	pub channel: u8,
-
-	// --------- Config --------- 1 Byte
-	// 1 Bit  : Is this the first packet
-	// 1 Bit  : Is this the last packet
-	// 2 Bits : Length of sequence number
-	// 2 Bits : Length of data length field
-	// 2 Bits : Length of ID
-	pub config: Config,
-
-	// --------- Length --------- 0-6 Bytes - Little Endian!
+	channel: u8,
+	// 1 Byte : PacketConfig
 	// 3 Byte : Agent ID (optional, up to 3 bytes)
 	pub id: u32,
 	// 3 Bytes: Sequence number (optional, up to 3 bytes)
 	pub sequence: u32,
-	// 3 Bytes: Data length (optional, up to 3 bytes)
-	pub data_len: u32,
-
-	// --------- Data --------- N Bytes
-	pub data: Vec<u8>,
+	// N byte
+	pub data: &'a [u8],
 }
 
-impl Packet {
-	pub fn new(channel: u8, id: u32, sequence: u32, data: Vec<u8>) -> Result<Self, PacketError> {
-		// Check correct field lengths. Check struct definition
-		if channel > 0xf { return Err(PacketError::ChannelOverflow) }
-		if id > 0xffffff { return Err(PacketError::IdOverflow) }
-		if sequence > 0xffffff { return Err(PacketError::SequenceOverflow) }
-		if data.len() > 0xffffff { return Err(PacketError::DataLenOverflow) }
-
-		Ok(Packet {
-			channel,
-			config: Config::new(),
-			id,
-			sequence,
-			data_len: data.len() as u32,
-			data,
-		})
-	}
-
-	pub fn calculate_lengths(&mut self) -> Result<usize, PacketError> {
-		// Check correct field lengths. Check struct definition
-		if self.channel > 0xf { return Err(PacketError::ChannelOverflow) }
-		if self.id > 0xffffff { return Err(PacketError::IdOverflow) }
-		if self.sequence > 0xffffff { return Err(PacketError::SequenceOverflow) }
-		if self.data.len() > 0xffffff { return Err(PacketError::DataLenOverflow) }
-
-		self.data_len = self.data.len() as u32;
-
-		let calc_bytes = |x| {
-			if x <= 0 { return 1u8 }
-			(x as f64).log(0x100 as f64).ceil() as u8
-		};
-
-		if self.config.id_len > 0 { self.config.id_len = calc_bytes(self.id); }
-		if self.config.data_len_len > 0 { self.config.data_len_len = calc_bytes(self.data_len); }
-		if self.config.seq_len > 0 { self.config.seq_len = calc_bytes(self.sequence); }
-
-		Ok((2 + self.config.id_len + self.config.seq_len + self.config.data_len_len) as usize)
-	}
-
-	pub fn has_id(&mut self, v: bool) {
-		if v { self.config.id_len = 3 }
-		else { self.config.id_len = 0 }
-	}
-
-	pub fn has_data_len(&mut self, v: bool) {
-		if v { self.config.data_len_len = 3 }
-		else { self.config.data_len_len = 0 }
-	}
-
-	pub fn has_sequence(&mut self, v: bool) {
-		if v { self.config.seq_len = 3 }
-		else { self.config.seq_len = 0 }
-	}
-
-	pub fn first(&mut self, v: bool) {
-		self.config.first = v;
-	}
-
-	pub fn last(&mut self, v: bool) {
-		self.config.last = v;
-	}
-
-	pub fn serialize(&mut self) -> Result<Vec<u8>, PacketError> {
-		// Hardcoded protocol version  vvv
-		let mut result: Vec<u8> = vec![0x00 | self.channel];
-
-		match self.config.serialize() {
-			Ok(d) => result.push(d),
-			Err(_) => return Err(PacketError::ConfigSerializationError)
-		}
-
-		for i in (0..self.config.id_len).rev() {
-			result.push(((self.id >> (8*i as u32)) & 0xff) as u8);
-		}
-
-		for i in (0..self.config.seq_len).rev() {
-			result.push((self.sequence >> (i as u32)*8) as u8);
-		}
-
-		for i in (0..self.config.data_len_len).rev() {
-			result.push((self.data_len >> (i as u32)*8) as u8);
-		}
-
-		result.append(self.data.to_vec().as_mut());
-
-		Ok(result.clone())
-	}
-
-	pub fn deserialize(data: &[u8] ) -> Result<Self, PacketError> {
-		let channel = data[0];
-		let config = Config{
-			first: (data[1] & (1 << 7)) > 0,
-			last: (data[1] & (1 << 6)) > 0,
-			id_len: (data[1] & 0b110000) >> 4,
-			seq_len: (data[1] & 0b1100) >> 2,
-			data_len_len: data[1] & 0b11,
-		};
-		let offset = 2 + config.id_len + config.seq_len + config.data_len_len;
-		let id: u32 = bytes_to_u32(&data[2..(2 + config.id_len) as usize]);
-		let sequence: u32 = bytes_to_u32(&data[(2 + config.id_len) as usize..(2 + config.id_len + config.seq_len) as usize]);
-		let data_len: u32 = bytes_to_u32(&data[(2 + config.id_len + config.seq_len) as usize..offset as usize]);
-
-		// Can't detect errors here... NaCl should check for errors (?)
-        // Return Ok() for consistency
-
-		Ok(Packet{
-			channel,
-			config,
-			data: data[offset as usize..data.len() as usize].to_vec(),
-			sequence,
-			data_len,
-			id
-		})
-	}
+impl Packet<'_> {
+	pub fn get_channel(&self) -> u8 { self.channel & 0xF }
+	pub fn get_version(&self) -> u8 { self.channel >> 4 }
 }
 
-impl Ord for Packet {
+impl<'a> Ord for Packet<'a> {
 	fn cmp(&self, other: &Self) -> Ordering {
 		self.sequence.cmp(&other.sequence)
 	}
 }
 
-impl PartialOrd for Packet {
+impl<'a> PartialOrd for Packet<'a> {
 	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
 		self.sequence.partial_cmp(&other.sequence)
 	}
 }
 
-impl PartialEq for Packet {
+impl<'a> PartialEq for Packet<'a> {
 	fn eq(&self, other: &Self) -> bool {
 		self.sequence == other.sequence
+	}
+}
+
+#[derive(Eq, Copy, Clone, PartialEq, Debug)]
+pub struct PacketConfig {
+	// --------- Config --------- 1 Byte
+	// 2 Bits : Reserved
+	// 2 Bits : Length of data length field
+	// 2 Bits : Length of sequence number
+	// 2 Bits : Length of ID
+	pub has_id: bool,
+	pub has_sequence: bool,
+	pub has_data_len: bool,
+
+	// Max packet length
+    pub max_size: usize,
+}
+
+impl PacketConfig {
+	pub fn serialize(&self, id: u32, channel: u8, sequence: u32, data: &[u8]) -> Result<(Vec<u8>, usize)> {
+		// Hardcoded protocol version  vvv - only the left part should change! 0x10, 0x20...
+		let mut result: Vec<u8> = vec![0x00 | channel];
+
+		let calc_bytes = |has: bool, v: u32, field: &'static str| {
+			// While log is "the right way", ifs are much faster
+			// if x <= 0 { return 1u8 }
+			// (x as f64).log(0x100 as f64).ceil() as u8
+
+            if !has { Ok(0) }
+			else if v > 0xFFFFFF || v < 0 { Err(FieldOverflowError{field}) }
+			else if v > 0xFFFF { Ok(3) }
+			else if v > 0xFF { Ok(2) }
+			else { Ok(1) }
+		};
+
+		let data_len = if data.len() < self.max_size { data.len() } else { self.max_size };
+		let id_len = calc_bytes(self.has_id, id, "id")?;
+		let seq_len = calc_bytes(self.has_sequence, sequence, "sequence")?;
+		let data_len_len = calc_bytes(self.has_data_len, data_len as u32, "data_len")?;
+
+		result.push((id_len << 4) | (seq_len << 2) | data_len_len);
+
+		for i in (0..id_len).rev() {
+			result.push((id >> (i as u32)*8) as u8);
+		}
+
+		for i in (0..seq_len).rev() {
+			result.push((sequence >> (i as u32)*8) as u8);
+		}
+
+		for i in (0..data_len_len).rev() {
+			result.push((data_len as u32 >> (i as u32)*8) as u8);
+		}
+
+		result.extend(data);
+
+		Ok((result, data_len))
+	}
+
+	pub fn deserialize(data: &[u8]) -> (Packet, Self, usize) {
+		let channel = data[0];
+
+		let id_len = (data[1] & 0b110000) >> 4;
+		let seq_len = (data[1] & 0b1100) >> 2;
+		let data_len_len = data[1] & 0b11;
+		let offset = 2 + id_len + seq_len + data_len_len;
+
+		let id = bytes_to_u32(&data[2..(2 + id_len) as usize]);
+		let sequence = bytes_to_u32(&data[(2 + id_len) as usize..(2 + id_len + seq_len) as usize]);
+		let data_len = if data_len_len > 0 {
+			bytes_to_u32(&data[(2 + id_len + seq_len) as usize..offset as usize])
+		} else { data.len() as u32 - offset as u32 };
+
+		// Can't detect errors here... NaCl should check for errors (?)
+
+		(Packet{
+			id,
+			channel,
+			sequence,
+			data: &data[offset as usize..data_len as usize],
+		}, Self{
+			has_id: id_len > 0,
+			has_sequence: seq_len > 0,
+			has_data_len: data_len_len > 0,
+			max_size: data_len as usize,
+		}, data_len as usize + offset as usize)
 	}
 }
 
@@ -231,99 +147,49 @@ mod tests {
 	use super::*;
 
 	#[test]
-    fn config() {
-		let mut config = Config::new();
-		assert_eq!(config.serialize().unwrap(), 0);
-
-		config.first = true;
-		assert_eq!(config.serialize().unwrap(), 0b10000000);
-
-		config.last = true;
-		assert_eq!(config.serialize().unwrap(), 0b11000000);
-
-		config.data_len_len = 3;
-		assert_eq!(config.serialize().unwrap(), 0b11000011);
-
-		config.id_len = 0x3f;
-		assert!(config.serialize().is_err(), "ID Length should be 2 bits (<4)");
-		config.id_len = 1;
-		config.seq_len = 0x3f;
-		assert!(config.serialize().is_err(), "Sequence Length should be 2 bits (<4)");
-		config.seq_len = 1;
-		config.data_len_len = 0x3f;
-		assert!(config.serialize().is_err(), "data_len Length should be 2 bits (<4)");
-    }
-
-	#[test]
 	fn packet() {
-        assert!(Packet::new(1, 1234, 0, vec![2u8; 2]).is_ok(), "A packet should be able to get created with the above config");
-		assert!(Packet::new(0x1f, 1234, 0, vec![2u8; 2]).is_err(), "Channel should be 4 bits (<=0x0F)");
-		assert!(Packet::new(0xf, 0x1ffffff, 0, vec![2u8; 2]).is_err(), "ID should be 3 bytes (<=0xFFFFFF)");
-		assert!(Packet::new(0xf, 0xffff, 0x1ffffff, vec![2u8; 2]).is_err(), "Sequence should be 3 bytes (<=0xFFFFFF)");
-		assert!(Packet::new(0xf, 0xffff, 0xffff, vec![2u8; 0x1ffffff]).is_err(), "Data length should be 3 bytes (<=0xFFFFFF)");
-	}
+        let pc = PacketConfig {
+        	has_id: true,
+        	has_sequence: true,
+        	has_data_len: false,
+			max_size: 256usize,
+		};
+		let (p1, _) = pc.serialize(0x1234, 1, 1, &[2u8; 3]).unwrap();
+        // TODO: Add equality test that takes into account ID, channel, sequence, data
+		let (p2, _) = pc.serialize(0x1234, 1, 2, &[2u8; 3]).unwrap();
+		let (p3, _) = pc.serialize(0x1234, 1, 2, &[2u8; 3]).unwrap();
+		let (p4, _) = pc.serialize(0, 1, 7, &[2u8; 3]).unwrap();
 
-	#[test]
-	fn order() {
-		let mut p1 = Packet::new(1, 0x1234, 1, vec![2u8; 3]).unwrap();
-        p1.has_sequence(true);
-		let mut p2 = Packet::new(1, 0x1234, 2, vec![2u8; 3]).unwrap();
-		p2.has_sequence(true);
-		let mut p3 = Packet::new(1, 0x1234, 2, vec![2u8; 3]).unwrap();
-		p3.has_sequence(true);
-		let mut p4 = Packet::new(1, 0x1234, 7, vec![2u8; 3]).unwrap();
-		p4.has_sequence(true);
+		// Test config overflows
+		assert!(pc.serialize(0x1FFFFFF, 1, 1, &[2u8; 1]).is_err(), "ID should be <= 3 bytes length (<=0xFFFFFF)");
+		assert!(pc.serialize(1, 0x1F, 1, &[2u8; 1]).is_err(), "Channel should be <= 4 bits length (<=0xF)");
+		assert!(pc.serialize(1, 1, 0x1FFFFFF, &[2u8; 1]).is_err(), "Sequence should be <= 3 bytes length (<=0xFFFFFF)");
+		assert!(pc.serialize(1, 1, 1, &[2u8; 0x1FFFFFF]).is_err(), "Data Length should be <= 3 bytes length (<=0xFFFFFF)");
 
+        // Test serialized equality
 		assert_eq!(p2, p3);
 		assert_ne!(p1, p2);
-        assert!(p2 > p1, "p2 is greater than p1 because it has higher sequence");
 
-		assert_eq!(p1.cmp(&p4), Ordering::Less);
-		assert_eq!(p2.cmp(&p1), Ordering::Greater);
-		assert_eq!(p2.cmp(&p3), Ordering::Equal);
-	}
+		let (pd1, pd, _) = PacketConfig::deserialize(p1.as_slice());
+		let (pd2, _, _) = PacketConfig::deserialize(p2.as_slice());
+		let (pd3, _, _) = PacketConfig::deserialize(p3.as_slice());
+		let (pd4, _, _) = PacketConfig::deserialize(p4.as_slice());
 
-	#[test]
-	fn serialize_deserialize() {
-		let mut p = Packet::new(1, 0x1234, 7, vec![2u8; 3]).unwrap();
-		p.has_id(true);
-		p.has_data_len(true);
-        p.has_sequence(true);
+		// Test deserialized equality
+		assert_eq!(pd2, pd3);
+		assert_ne!(pd1, pd2);
 
-		p.calculate_lengths().unwrap();
+		// Test order
+        assert!(pd2 > pd1, "p2 is greater than p1 because it has higher sequence");
 
-		let s = p.serialize().unwrap();
-        assert_eq!(s, vec![1, 0b00100101, 0x12, 0x34, 7, 3, 2, 2, 2]);
+		assert_eq!(pd1.cmp(&pd4), Ordering::Less);
+		assert_eq!(pd2.cmp(&pd1), Ordering::Greater);
+		assert_eq!(pd2.cmp(&pd3), Ordering::Equal);
 
-		let d = Packet::deserialize(s.as_slice()).unwrap();
-		assert_eq!(p, d);
+		let (ps1, _) = pd.serialize(0x1234, 1, 1, &[2u8; 3]).unwrap();
 
-		p.has_id(false);
-		p.has_data_len(false);
-		p.has_sequence(false);
-		p.calculate_lengths().unwrap();
-		assert_eq!(p.serialize().unwrap(), vec![1, 0, 2, 2, 2]);
-
-		// On purpose does not call calculate_lengths
-		p.config.id_len = 10;
-		assert!(p.serialize().is_err(), "Config has invalid ID Length");
-	}
-
-	#[test]
-	fn calculate_lengths() {
-		let mut p = Packet::new(1, 0x1234, 7, vec![2u8; 3]).unwrap();
-        assert!(p.calculate_lengths().is_ok(), "All lengths are valid!");
-        p.channel = 0x1f;
-		assert!(p.calculate_lengths().is_err(), "Channel should be 4 bits (<16)");
-		p.channel = 0x1;
-        p.id = 0x1ffffff;
-		assert!(p.calculate_lengths().is_err(), "ID should be 3 bytes (<= 0xFFFFFF)");
-		p.id = 0x1;
-		p.sequence = 0x1ffffff;
-		assert!(p.calculate_lengths().is_err(), "Sequence should be 3 bytes (<= 0xFFFFFF)");
-		p.sequence = 0x1;
-		p.data = vec![1; 0x1ffffff];
-		assert!(p.calculate_lengths().is_err(), "Data length should be 3 bytes (<= 0xFFFFFF)");
+		// Test serialize & deserialize
+		assert_eq!(p1, ps1);
 	}
 
 	#[test]

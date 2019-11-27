@@ -1,11 +1,14 @@
 use std::io;
 use std::io::{Read, Write, Error, ErrorKind};
-use stream::{Stream, StreamError};
+use stream::Stream;
 use channel::Channel;
 use crossbeam_channel::{Sender, Receiver, bounded as ch};
 use std::collections::HashMap;
 use std::borrow::BorrowMut;
 
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+#[repr(C)]
 pub struct Connection<'conn> {
     pub id: u32,
     stream: Stream,
@@ -15,7 +18,7 @@ pub struct Connection<'conn> {
 }
 
 impl<'conn> Connection<'conn> {
-    pub fn new(id: u32, reader: &'conn mut impl Read, writer: &'conn mut impl Write, server: bool, seed: &[u8], remote_key: &[u8]) -> Result<Self, StreamError> {
+    pub fn new(id: u32, reader: &'conn mut impl Read, writer: &'conn mut impl Write, server: bool, seed: &[u8], remote_key: &[u8]) -> Result<Self> {
         match Stream::new(server, seed, remote_key) {
             Ok(stream) => Ok(Connection {
                 id,
@@ -24,23 +27,27 @@ impl<'conn> Connection<'conn> {
                 writer,
                 channels: HashMap::new()
             }),
-            Err(e) => return Err(e)
+            Err(e) => Err(e)
         }
     }
 
-    pub fn read_all_channels(&mut self) -> Result<HashMap<u8, Vec<u8>>, StreamError> {
+    pub fn read_all_channels(&mut self) -> Result<HashMap<u8, Vec<u8>>> {
+        let mut result: HashMap<u8, Vec<u8>> = HashMap::new();
         let mut original = [0u8; 256];
         // TODO: Handle too small buffer
         // TODO: Handle errors here
-        let size = match self.reader.read(&mut original) {
-            Ok(d) => d,
-            Err(_) => return Err(StreamError::PacketDeserializationError)
-        };
+        let size = self.reader.read(&mut original)?;
 
-        self.stream.dechunk(original[..size].to_vec())
+        let packets = self.stream.dechunk(&original[..size])?;
+
+        for p in packets {
+            result.entry(p.get_channel()).or_insert(Vec::new()).extend(p.data);
+        }
+
+        Ok(result)
     }
 
-    pub fn write_channel(&mut self, channel: u8, data: Vec<u8>) -> Result<(), StreamError> {
+    pub fn write_channel(&mut self, channel: u8, data: &[u8]) -> Result<()> {
         let packets = self.stream.chunk(0, channel, data)?;
 
         for p in packets {
@@ -53,7 +60,7 @@ impl<'conn> Connection<'conn> {
         Ok(())
     }
 
-    pub fn get_channel(&mut self, channel: u8) -> Channel {
+    fn get_channel(&mut self, channel: u8) -> Channel {
         let (from_ch, to_conn) = ch(0);
         let (from_conn, to_ch) = ch(0);
         self.channels.entry(channel).or_insert(Vec::new()).push((from_conn, to_conn));
@@ -65,7 +72,7 @@ impl<'conn> Connection<'conn> {
         }
     }
 
-    pub fn channel_loop(&mut self) {
+    fn channel_loop(&mut self) {
         // TODO: Handle errors here
         for (k, v) in self.read_all_channels().unwrap().iter() {
             for c in self.channels.get(k).unwrap() {
@@ -81,7 +88,7 @@ impl<'conn> Connection<'conn> {
             for (_, r) in v {
                 match r.try_recv() {
                     Ok(d) => {
-                        buf.entry(*k).or_insert(Vec::new()).append(d.clone().borrow_mut());
+                        buf.entry(*k).or_insert(Vec::new()).append(d.to_vec().borrow_mut());
                     },
                     _ => {}
                 };
@@ -89,7 +96,7 @@ impl<'conn> Connection<'conn> {
         }
 
         for (k, v) in buf.iter() {
-            self.write_channel(*k, v.clone());
+            self.write_channel(*k, v.as_slice());
             self.flush();
         }
     }
@@ -117,7 +124,7 @@ impl Write for Connection<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         // TODO: Duplicate code with write_channel
         let mut result: io::Result<usize> = Ok(0);
-        let chunks = match self.stream.chunk(0, 0, buf.to_vec()) {
+        let chunks = match self.stream.chunk(0, 0, buf) {
             Ok(c) => c,
             Err(_) => return Err(Error::new(ErrorKind::InvalidData, "Error while chunking data"))
         };
