@@ -35,7 +35,6 @@ impl<'conn> Connection<'conn> {
         let mut result: HashMap<u8, Vec<u8>> = HashMap::new();
         let mut original = [0u8; 256];
         // TODO: Handle too small buffer
-        // TODO: Handle errors here
         let size = self.reader.read(&mut original)?;
 
         let packets = self.stream.dechunk(&original[..size])?;
@@ -47,19 +46,20 @@ impl<'conn> Connection<'conn> {
         Ok(result)
     }
 
-    pub fn write_channel(&mut self, channel: u8, data: &[u8]) -> Result<()> {
+    pub fn write_channel(&mut self, channel: u8, data: &[u8]) -> Result<usize> {
         let packets = self.stream.chunk(0, channel, data)?;
+        let mut result: usize = 0;
 
         for p in packets {
-            // TODO: Handle errors here
-            self.writer.write(p.as_slice())?;
+            result += self.writer.write(p.as_slice())?;
             // Is that needed?
             self.writer.flush()?;
         }
 
-        Ok(())
+        Ok(result)
     }
 
+    #[allow(dead_code)]
     fn get_channel(&mut self, channel: u8) -> Channel {
         let (from_ch, to_conn) = ch(0);
         let (from_conn, to_ch) = ch(0);
@@ -72,11 +72,11 @@ impl<'conn> Connection<'conn> {
         }
     }
 
-    fn channel_loop(&mut self) {
-        // TODO: Handle errors here
+    #[allow(dead_code)]
+    fn channel_loop(&mut self) -> Result<()> {
         for (k, v) in self.read_all_channels().unwrap().iter() {
             for c in self.channels.get(k).unwrap() {
-                c.0.send(v.clone()).unwrap();
+                c.0.send(v.clone())?;
             }
         }
 
@@ -96,13 +96,15 @@ impl<'conn> Connection<'conn> {
         }
 
         for (k, v) in buf.iter() {
-            self.write_channel(*k, v.as_slice()).unwrap();
-            self.flush().unwrap();
+            self.write_channel(*k, v.as_slice())?;
+            self.flush()?;
         }
+
+        Ok(())
     }
 }
 
-// TODO: Add some kind of warning that this is using default id 0 and channel 0
+#[deprecated(since="0.1.0", note="Please use `read_all_channels` or `channel_loop` with `get_channel`")]
 impl Read for Connection<'_> {
     fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
         let dechunked = match self.read_all_channels() {
@@ -123,23 +125,13 @@ impl Read for Connection<'_> {
     }
 }
 
+#[deprecated(since="0.1.0", note="Please use `write_channel` or `channel_loop` with `get_channel`")]
 impl Write for Connection<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        // TODO: Duplicate code with write_channel
-        let mut result: io::Result<usize> = Ok(0);
-        let chunks = match self.stream.chunk(0, 0, buf) {
-            Ok(c) => c,
-            Err(_) => return Err(Error::new(ErrorKind::InvalidData, "Error while chunking data"))
-        };
-
-        for d in chunks {
-            result = match self.writer.write(d.as_slice()) {
-                Ok(_) => Ok(buf.len()),
-                Err(e) => return Err(e),
-            };
+        match self.write_channel(0, buf) {
+            Ok(d) => Ok(d),
+            Err(e) => Err(io::Error::new(ErrorKind::Other, e.to_string()))
         }
-
-        result
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -223,9 +215,9 @@ mod tests {
         // has to end at some point
         for _ in 0..6 {
             sleep(Duration::from_millis(100));
-            conn.channel_loop();
+            conn.channel_loop().unwrap();
             sleep(Duration::from_millis(100));
-            conn2.channel_loop();
+            conn2.channel_loop().unwrap();
         }
 
         thread.join().unwrap();
@@ -240,7 +232,6 @@ mod tests {
         a.flush().unwrap();
         let r = b.read(&mut buf);
 
-        println!("{:?}", r);
         assert_eq!(r.is_ok(), succ);
         if succ { assert_eq!(&buf[..r.unwrap()], data); }
 //        else { assert_ne!(&buf[..r.unwrap()], data); }

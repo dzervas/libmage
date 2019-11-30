@@ -1,5 +1,4 @@
-extern crate custom_error;
-use self::custom_error::custom_error;
+use custom_error::custom_error;
 
 use std::cmp::Ordering;
 
@@ -23,6 +22,7 @@ pub struct Packet {
 }
 
 impl Packet {
+	#[allow(dead_code)]
 	pub fn get_channel(&self) -> u8 { self.channel & 0xF }
 	pub fn get_version(&self) -> u8 { self.channel >> 4 }
 }
@@ -195,6 +195,11 @@ mod tests {
 		assert_eq!(pd2.get_channel(), 1);
 		assert_eq!(pd3.get_channel(), 1);
 		assert_eq!(pd4.get_channel(), 1);
+
+		assert_eq!(pd1.get_version(), 0);
+		assert_eq!(pd2.get_version(), 0);
+		assert_eq!(pd3.get_version(), 0);
+		assert_eq!(pd4.get_version(), 0);
 
 		// Test deserialized equality
 		assert_eq!(pd2, pd3);

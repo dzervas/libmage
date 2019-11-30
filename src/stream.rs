@@ -1,8 +1,6 @@
-extern crate custom_error;
-use self::custom_error::custom_error;
-
 use packet::{Packet, PacketConfig};
 
+use custom_error::custom_error;
 use sodiumoxide::crypto::{kx, secretstream};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
