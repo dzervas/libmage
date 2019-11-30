@@ -81,7 +81,7 @@ impl Stream {
                 has_id: true,
                 has_sequence: true,
                 has_data_len: true,
-                max_size: 256,
+                max_size: 256 - secretstream::ABYTES,
             },
             enc_stream: pusher,
             dec_stream: puller,
@@ -165,7 +165,7 @@ impl Stream {
                 Err(_) => return Err(Box::new(StreamError::DecryptionError))
             };
 
-            let (pack, pc, r) = PacketConfig::deserialize(plain.as_slice());
+            let (pack, _pc, r) = PacketConfig::deserialize(plain.as_slice());
             // While I think it's a good idea to error out on different configs, max_size can't be
             // calculated if we don't have data_len enabled, as a smaller packet will have smaller
             // max_size (due to less data). Maybe I should implement that logic in the Eq trait
@@ -230,7 +230,7 @@ mod tests {
         let mut findat: Vec<u8> = Vec::new();
 //        let chunked_len = chunked.len();
 
-        for mut chunk in chunked {
+        for chunk in chunked {
             // TODO: Find a way to take data from chunks to test each chunk
             // This does not work as the first chunk of the first test is the header
 //            assert_eq!(succ, b.dechunk(chunk.clone()).is_ok());

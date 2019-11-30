@@ -2,7 +2,6 @@
 name = "mage"
 version = "0.1.0"
 authors = ["Dimitris Zervas <dzervas@dzervas.gr>"]
-#build = "build.rs"
 
 [lib]
 name = "mage"
@@ -10,16 +9,7 @@ name = "mage"
 crate-type = ["lib", "cdylib", "staticlib"]
 path = "src/lib.rs"
 
-[[bin]]
-name = "mage-wrap"
-path = "src/main-wrap.rs"
-
 [dependencies]
 custom_error = "*"
 sodiumoxide = "*"
 crossbeam-channel = "*"
-# clap is not required in lib build
-clap = "*"
-
-#[build-dependencies]
-#cbindgen = "*"

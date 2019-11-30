@@ -52,9 +52,9 @@ impl<'conn> Connection<'conn> {
 
         for p in packets {
             // TODO: Handle errors here
-            self.writer.write(p.as_slice());
+            self.writer.write(p.as_slice())?;
             // Is that needed?
-            self.writer.flush();
+            self.writer.flush()?;
         }
 
         Ok(())
@@ -76,7 +76,7 @@ impl<'conn> Connection<'conn> {
         // TODO: Handle errors here
         for (k, v) in self.read_all_channels().unwrap().iter() {
             for c in self.channels.get(k).unwrap() {
-                c.0.send(v.clone());
+                c.0.send(v.clone()).unwrap();
             }
         }
 
@@ -96,8 +96,8 @@ impl<'conn> Connection<'conn> {
         }
 
         for (k, v) in buf.iter() {
-            self.write_channel(*k, v.as_slice());
-            self.flush();
+            self.write_channel(*k, v.as_slice()).unwrap();
+            self.flush().unwrap();
         }
     }
 }
@@ -105,7 +105,10 @@ impl<'conn> Connection<'conn> {
 // TODO: Add some kind of warning that this is using default id 0 and channel 0
 impl Read for Connection<'_> {
     fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
-        let dechunked = self.read_all_channels().unwrap();
+        let dechunked = match self.read_all_channels() {
+            Ok(d) => d,
+            Err(e) => return Err(io::Error::new(ErrorKind::Other, e.to_string()))
+        };
 
         let bytes = match dechunked.get(&0u8) {
             Some(d) => d,
@@ -189,8 +192,9 @@ mod tests {
         test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[7; 100]);
         test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[7; 1]);
         test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[7; 1]);
-//        test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[7; 100000]);
-//        test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[7; 100000]);
+        // TODO: Find a way to keep the connection open even after error
+//        test_rw(false, conn.borrow_mut(), conn2.borrow_mut(), &[7; 100000]);
+//        test_rw(false, conn2.borrow_mut(), conn.borrow_mut(), &[7; 100000]);
 
         // Channels
         println!("Channels:");
@@ -206,6 +210,9 @@ mod tests {
             test_rw(true, chan2.borrow_mut(), chan.borrow_mut(), &[7; 100]);
             test_rw(true, chan_other.borrow_mut(), chan2_other.borrow_mut(), &[7; 100]);
             test_rw(true, chan2_other.borrow_mut(), chan_other.borrow_mut(), &[7; 100]);
+            // TODO: Find a way to keep the channel open even after error
+//            test_rw(false, chan_other.borrow_mut(), chan2_other.borrow_mut(), &[7; 100000]);
+//            test_rw(false, chan2_other.borrow_mut(), chan_other.borrow_mut(), &[7; 100000]);
             // This blocks
 //            test_rw(false, chan.borrow_mut(), chan2_other.borrow_mut(), &[7; 100]);
 //            test_rw(false, chan2_other.borrow_mut(), chan.borrow_mut(), &[7; 100]);
@@ -214,7 +221,7 @@ mod tests {
         // I see no other way than sleep.
         // channel_loop is non-blocking (should be) and the test
         // has to end at some point
-        for i in 0..6 {
+        for _ in 0..6 {
             sleep(Duration::from_millis(100));
             conn.channel_loop();
             sleep(Duration::from_millis(100));
@@ -228,10 +235,14 @@ mod tests {
     fn test_rw(succ: bool, a: &mut impl Write, b: &mut impl Read, data: &[u8]) {
         let mut buf = [0u8; 2048];
 
-        assert_eq!(succ, a.write(data).is_ok());
+        // Should be always ok to write & flush
+        a.write(data).unwrap();
         a.flush().unwrap();
         let r = b.read(&mut buf);
-        assert_eq!(succ, r.is_ok());
+
+        println!("{:?}", r);
+        assert_eq!(r.is_ok(), succ);
         if succ { assert_eq!(&buf[..r.unwrap()], data); }
+//        else { assert_ne!(&buf[..r.unwrap()], data); }
     }
 }

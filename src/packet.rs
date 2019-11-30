@@ -73,7 +73,7 @@ impl PacketConfig {
 			// (x as f64).log(0x100 as f64).ceil() as u8
 
             if !has { Ok(0) }
-			else if v > 0xFFFFFF || v < 0 { Err(Box::new(FieldOverflowError{field})) }
+			else if v > 0xFFFFFF { Err(Box::new(FieldOverflowError{field})) }
 			else if v > 0xFFFF { Ok(3) }
 			else if v > 0xFF { Ok(2) }
 			else { Ok(1) }
@@ -82,7 +82,7 @@ impl PacketConfig {
 		let id_len = calc_bytes(self.has_id, id, "id")?;
 		let seq_len = calc_bytes(self.has_sequence, sequence, "sequence")?;
 
-		let mut overhead = 2 + id_len as usize + seq_len as usize;
+		let overhead = 2 + id_len as usize + seq_len as usize;
 		let mut data_len = if data.len() < self.max_size - overhead { data.len() } else { self.max_size - overhead };
 		let mut data_len_len = calc_bytes(self.has_data_len, data_len as u32, "data_len")?;
 
@@ -190,6 +190,11 @@ mod tests {
 		let (pd2, _, _) = PacketConfig::deserialize(p2.as_slice());
 		let (pd3, _, _) = PacketConfig::deserialize(p3.as_slice());
 		let (pd4, _, _) = PacketConfig::deserialize(p4.as_slice());
+
+		assert_eq!(pd1.get_channel(), 1);
+		assert_eq!(pd2.get_channel(), 1);
+		assert_eq!(pd3.get_channel(), 1);
+		assert_eq!(pd4.get_channel(), 1);
 
 		// Test deserialized equality
 		assert_eq!(pd2, pd3);
