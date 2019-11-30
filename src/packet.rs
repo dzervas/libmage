@@ -1,12 +1,13 @@
+extern crate custom_error;
+use self::custom_error::custom_error;
+
 use std::cmp::Ordering;
-#[macro_use]
-use custom_error::custom_error;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 custom_error!{FieldOverflowError{field: &'static str} = "Field {field} is more than 3 bytes. It must be 3 bytes (<=0xFFFFFF) max"}
 
-#[derive(Eq, Clone, Copy, Debug)]
-pub struct Packet<'a> {
+#[derive(Eq, Debug)]
+pub struct Packet {
 	// The protocol version is crammed in here during serialization
 	// and removed during deserialization
 	// 4 Bits : Protocol version - not accessible
@@ -18,27 +19,27 @@ pub struct Packet<'a> {
 	// 3 Bytes: Sequence number (optional, up to 3 bytes)
 	pub sequence: u32,
 	// N byte
-	pub data: &'a [u8],
+	pub data: Vec<u8>,
 }
 
-impl Packet<'_> {
+impl Packet {
 	pub fn get_channel(&self) -> u8 { self.channel & 0xF }
 	pub fn get_version(&self) -> u8 { self.channel >> 4 }
 }
 
-impl<'a> Ord for Packet<'a> {
+impl Ord for Packet {
 	fn cmp(&self, other: &Self) -> Ordering {
 		self.sequence.cmp(&other.sequence)
 	}
 }
 
-impl<'a> PartialOrd for Packet<'a> {
+impl PartialOrd for Packet {
 	fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
 		self.sequence.partial_cmp(&other.sequence)
 	}
 }
 
-impl<'a> PartialEq for Packet<'a> {
+impl PartialEq for Packet {
 	fn eq(&self, other: &Self) -> bool {
 		self.sequence == other.sequence
 	}
@@ -64,22 +65,34 @@ impl PacketConfig {
 		// Hardcoded protocol version  vvv - only the left part should change! 0x10, 0x20...
 		let mut result: Vec<u8> = vec![0x00 | channel];
 
-		let calc_bytes = |has: bool, v: u32, field: &'static str| {
+		if channel > 0xF { return Err(Box::new(FieldOverflowError{field: "channel"})) }
+
+		let calc_bytes = |has: bool, v: u32, field: &'static str| -> Result<u8> {
 			// While log is "the right way", ifs are much faster
 			// if x <= 0 { return 1u8 }
 			// (x as f64).log(0x100 as f64).ceil() as u8
 
             if !has { Ok(0) }
-			else if v > 0xFFFFFF || v < 0 { Err(FieldOverflowError{field}) }
+			else if v > 0xFFFFFF || v < 0 { Err(Box::new(FieldOverflowError{field})) }
 			else if v > 0xFFFF { Ok(3) }
 			else if v > 0xFF { Ok(2) }
 			else { Ok(1) }
 		};
 
-		let data_len = if data.len() < self.max_size { data.len() } else { self.max_size };
 		let id_len = calc_bytes(self.has_id, id, "id")?;
 		let seq_len = calc_bytes(self.has_sequence, sequence, "sequence")?;
-		let data_len_len = calc_bytes(self.has_data_len, data_len as u32, "data_len")?;
+
+		let mut overhead = 2 + id_len as usize + seq_len as usize;
+		let mut data_len = if data.len() < self.max_size - overhead { data.len() } else { self.max_size - overhead };
+		let mut data_len_len = calc_bytes(self.has_data_len, data_len as u32, "data_len")?;
+
+        // Recalculate to fit data in max_size
+		while overhead + data_len + data_len_len as usize > self.max_size {
+			data_len -= 1;
+			data_len_len = calc_bytes(self.has_data_len, data_len as u32, "data_len")?;
+
+			if data_len == 0 { return Err(Box::new(FieldOverflowError{field: "data_len"})) }
+		}
 
 		result.push((id_len << 4) | (seq_len << 2) | data_len_len);
 
@@ -95,7 +108,7 @@ impl PacketConfig {
 			result.push((data_len as u32 >> (i as u32)*8) as u8);
 		}
 
-		result.extend(data);
+		result.extend(&data[..data_len]);
 
 		Ok((result, data_len))
 	}
@@ -120,12 +133,13 @@ impl PacketConfig {
 			id,
 			channel,
 			sequence,
-			data: &data[offset as usize..data_len as usize],
+			data: data[offset as usize..offset as usize + data_len as usize].to_vec(),
 		}, Self{
 			has_id: id_len > 0,
 			has_sequence: seq_len > 0,
 			has_data_len: data_len_len > 0,
-			max_size: data_len as usize,
+			max_size: data_len as usize + offset as usize,
+		// max_size is the same with the last value in tuple. maybe remove it?
 		}, data_len as usize + offset as usize)
 	}
 }
@@ -151,7 +165,7 @@ mod tests {
         let pc = PacketConfig {
         	has_id: true,
         	has_sequence: true,
-        	has_data_len: false,
+        	has_data_len: true,
 			max_size: 256usize,
 		};
 		let (p1, _) = pc.serialize(0x1234, 1, 1, &[2u8; 3]).unwrap();
@@ -164,7 +178,9 @@ mod tests {
 		assert!(pc.serialize(0x1FFFFFF, 1, 1, &[2u8; 1]).is_err(), "ID should be <= 3 bytes length (<=0xFFFFFF)");
 		assert!(pc.serialize(1, 0x1F, 1, &[2u8; 1]).is_err(), "Channel should be <= 4 bits length (<=0xF)");
 		assert!(pc.serialize(1, 1, 0x1FFFFFF, &[2u8; 1]).is_err(), "Sequence should be <= 3 bytes length (<=0xFFFFFF)");
-		assert!(pc.serialize(1, 1, 1, &[2u8; 0x1FFFFFF]).is_err(), "Data Length should be <= 3 bytes length (<=0xFFFFFF)");
+		let (d, dl) = pc.serialize(1, 1, 1, &[2u8; 0x1FFFFFF]).unwrap();
+		assert_eq!(d.len(), pc.max_size);
+		assert!(dl < pc.max_size, "Data Length should be <= 3 bytes length (<=0xFFFFFF)");
 
         // Test serialized equality
 		assert_eq!(p2, p3);

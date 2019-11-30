@@ -1,5 +1,3 @@
-#[macro_use]
-extern crate custom_error;
 extern crate crossbeam_channel;
 extern crate sodiumoxide;
 

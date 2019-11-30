@@ -18,22 +18,22 @@ use std::io::{Read, Write};
 use clap::{App, Arg};
 
 fn main() {
-    let mut p = Packet::new(1, 0x1234, 0, "hello".as_bytes().to_vec()).unwrap();
-    p.has_id(true);
-    p.has_data_len(true);
+//    let mut p = Packet::new(1, 0x1234, 0, "hello".as_bytes().to_vec()).unwrap();
+//    p.has_id(true);
+//    p.has_data_len(true);
 
-    p.calculate_lengths();
-    println!("{:?}", p);
+//    p.calculate_lengths();
+//    println!("{:?}", p);
 
-    let s = p.serialize().unwrap();
-    println!("{:?}", s);
+//    let s = p.serialize().unwrap();
+//    println!("{:?}", s);
 
-    let d = Packet::deserialize(&s[..]);
-    println!("{:?}", d);
+//    let d = Packet::deserialize(&s[..]);
+//    println!("{:?}", d);
 
     let mut st = Stream::new(true, vec![1; 32].as_slice(), vec![252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6].as_slice()).unwrap();
 
-    let cs = st.chunk(13, 14, "hello world wow".as_bytes().to_vec()).unwrap();
+    let cs = st.chunk(13, 14, "hello world wow".as_bytes()).unwrap();
     println!("{:?}", cs);
 //    let cipher = cs.get(0).unwrap();
 
