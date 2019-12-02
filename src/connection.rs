@@ -5,20 +5,20 @@ use channel::Channel;
 use crossbeam_channel::{Sender, Receiver, bounded as ch};
 use std::collections::HashMap;
 use std::borrow::BorrowMut;
+use std::ops::DerefMut;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-#[repr(C)]
 pub struct Connection<'conn> {
     pub id: u32,
     stream: Stream,
-    reader: &'conn mut dyn Read,
-    writer: &'conn mut dyn Write,
+    reader: &'conn mut (dyn Read + Send),
+    writer: &'conn mut (dyn Write + Send),
     channels: HashMap<u8, Vec<(Sender<Vec<u8>>, Receiver<Vec<u8>>)>>
 }
 
 impl<'conn> Connection<'conn> {
-    pub fn new(id: u32, reader: &'conn mut impl Read, writer: &'conn mut impl Write, server: bool, seed: &[u8], remote_key: &[u8]) -> Result<Self> {
+    pub fn new(id: u32, reader: &'conn mut (dyn Read + Send), writer: &'conn mut (dyn Write + Send), server: bool, seed: &[u8], remote_key: &[u8]) -> Result<Self> {
         match Stream::new(server, seed, remote_key) {
             Ok(stream) => Ok(Connection {
                 id,
@@ -29,6 +29,13 @@ impl<'conn> Connection<'conn> {
             }),
             Err(e) => Err(e)
         }
+    }
+
+    pub fn new_box(id: u32, mut box_reader: Box<dyn Read + Send>, mut box_writer: Box<dyn Write + Send>, server: bool, seed: &[u8], remote_key: &[u8]) -> Result<Self> {
+        let reader = *box_reader;
+        let writer = *box_writer;
+
+        Connection::new(id, &mut *reader, &mut *writer, server, seed, remote_key)
     }
 
     pub fn read_all_channels(&mut self) -> Result<HashMap<u8, Vec<u8>>> {
