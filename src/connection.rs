@@ -5,44 +5,37 @@ use channel::Channel;
 use crossbeam_channel::{Sender, Receiver, bounded as ch};
 use std::collections::HashMap;
 use std::borrow::BorrowMut;
-use std::ops::DerefMut;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+pub trait ReadWrite: Read + Write + Sync + Send {}
+impl<T: ?Sized + Read + Write + Sync + Send> ReadWrite for T {}
 
-pub struct Connection<'conn> {
+
+pub struct Connection {
     pub id: u32,
     stream: Stream,
-    reader: &'conn mut (dyn Read + Send),
-    writer: &'conn mut (dyn Write + Send),
+    rw: Box<dyn ReadWrite>,
     channels: HashMap<u8, Vec<(Sender<Vec<u8>>, Receiver<Vec<u8>>)>>
 }
 
-impl<'conn> Connection<'conn> {
-    pub fn new(id: u32, reader: &'conn mut (dyn Read + Send), writer: &'conn mut (dyn Write + Send), server: bool, seed: &[u8], remote_key: &[u8]) -> Result<Self> {
+impl Connection {
+    pub fn new(id: u32, rw: Box<dyn ReadWrite>, server: bool, seed: &[u8], remote_key: &[u8]) -> Result<Self> {
         match Stream::new(server, seed, remote_key) {
             Ok(stream) => Ok(Connection {
                 id,
                 stream,
-                reader,
-                writer,
+                rw,
                 channels: HashMap::new()
             }),
             Err(e) => Err(e)
         }
     }
 
-    pub fn new_box(id: u32, mut box_reader: Box<dyn Read + Send>, mut box_writer: Box<dyn Write + Send>, server: bool, seed: &[u8], remote_key: &[u8]) -> Result<Self> {
-        let reader = *box_reader;
-        let writer = *box_writer;
-
-        Connection::new(id, &mut *reader, &mut *writer, server, seed, remote_key)
-    }
-
     pub fn read_all_channels(&mut self) -> Result<HashMap<u8, Vec<u8>>> {
         let mut result: HashMap<u8, Vec<u8>> = HashMap::new();
         let mut original = [0u8; 256];
         // TODO: Handle too small buffer
-        let size = self.reader.read(&mut original)?;
+        let size = self.rw.read(&mut original)?;
 
         let packets = self.stream.dechunk(&original[..size])?;
 
@@ -58,9 +51,9 @@ impl<'conn> Connection<'conn> {
         let mut result: usize = 0;
 
         for p in packets {
-            result += self.writer.write(p.as_slice())?;
+            result += self.rw.write(p.as_slice())?;
             // Is that needed?
-            self.writer.flush()?;
+            self.rw.flush()?;
         }
 
         Ok(result)
@@ -112,7 +105,7 @@ impl<'conn> Connection<'conn> {
 }
 
 #[deprecated(since="0.1.0", note="Please use `read_all_channels` or `channel_loop` with `get_channel`")]
-impl Read for Connection<'_> {
+impl Read for Connection {
     fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
         let dechunked = match self.read_all_channels() {
             Ok(d) => d,
@@ -133,7 +126,7 @@ impl Read for Connection<'_> {
 }
 
 #[deprecated(since="0.1.0", note="Please use `write_channel` or `channel_loop` with `get_channel`")]
-impl Write for Connection<'_> {
+impl Write for Connection {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self.write_channel(0, buf) {
             Ok(d) => Ok(d),
@@ -142,7 +135,7 @@ impl Write for Connection<'_> {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.writer.flush()
+        self.rw.flush()
     }
 }
 
@@ -150,7 +143,6 @@ impl Write for Connection<'_> {
 mod tests {
     use super::*;
     use std::fs::{File, OpenOptions};
-    use std::io::{BufReader, BufWriter};
     use std::borrow::BorrowMut;
     use std::thread::{sleep, spawn};
     use std::time::Duration;
@@ -161,31 +153,25 @@ mod tests {
     #[test]
     fn new() {
         let file = File::create("/tmp/mage-test").unwrap();
-        let mut reader = BufReader::new(file.try_clone().unwrap());
-        let mut writer = BufWriter::new(file);
 
-        assert!(Connection::new(10, &mut reader, &mut writer, true, &[1; 32], &[2; 32]).is_ok(), "Can't create dummy connection");
-        assert!(Connection::new(10, &mut reader, &mut writer, true, &[1; 31], &[2; 32]).is_err(), "Key seed is too small, must be 32 bytes");
-        assert!(Connection::new(10, &mut reader, &mut writer, true, &[1; 33], &[2; 32]).is_err(), "Key seed is too big, must be 32 bytes");
-        assert!(Connection::new(10, &mut reader, &mut writer, true, &[1; 32], &[2; 31]).is_err(), "Remote key is too small, must be 32 bytes");
-        assert!(Connection::new(10, &mut reader, &mut writer, true, &[1; 32], &[2; 33]).is_err(), "Remote key is too big, must be 32 bytes");
-//        assert!(Connection::new(0x1FFFFFF, &mut reader, &mut writer, true, &[1; 32], &[2; 32]).is_err(), "ID is longer than 3 bytes");
-        assert!(Connection::new(0xFFFFFF, &mut reader, &mut writer, true, &[1; 32], &[2; 32]).is_ok(), "Can't create dummy connection");
-        assert!(Connection::new(0xFF, &mut reader, &mut writer, true, &[1; 32], &[2; 32]).is_ok(), "Can't create dummy connection");
-        assert!(Connection::new(0, &mut reader, &mut writer, true, &[1; 32], &[2; 32]).is_ok(), "Can't create dummy connection");
+        assert!(Connection::new(10, Box::new(file.try_clone().unwrap()), true, &[1; 32], &[2; 32]).is_ok(), "Can't create dummy connection");
+        assert!(Connection::new(10, Box::new(file.try_clone().unwrap()), true, &[1; 31], &[2; 32]).is_err(), "Key seed is too small, must be 32 bytes");
+        assert!(Connection::new(10, Box::new(file.try_clone().unwrap()), true, &[1; 33], &[2; 32]).is_err(), "Key seed is too big, must be 32 bytes");
+        assert!(Connection::new(10, Box::new(file.try_clone().unwrap()), true, &[1; 32], &[2; 31]).is_err(), "Remote key is too small, must be 32 bytes");
+        assert!(Connection::new(10, Box::new(file.try_clone().unwrap()), true, &[1; 32], &[2; 33]).is_err(), "Remote key is too big, must be 32 bytes");
+//        assert!(Connection::new(0x1FFFFFF, Box::new(file.try_clone().unwrap()), &mut rw, true, &[1; 32], &[2; 32]).is_err(), "ID is longer than 3 bytes");
+        assert!(Connection::new(0xFFFFFF, Box::new(file.try_clone().unwrap()), true, &[1; 32], &[2; 32]).is_ok(), "Can't create dummy connection");
+        assert!(Connection::new(0xFF, Box::new(file.try_clone().unwrap()), true, &[1; 32], &[2; 32]).is_ok(), "Can't create dummy connection");
+        assert!(Connection::new(0, Box::new(file.try_clone().unwrap()), true, &[1; 32], &[2; 32]).is_ok(), "Can't create dummy connection");
     }
 
     #[test]
     fn read_write() {
         let file = OpenOptions::new().read(true).write(true).create(true).open("/tmp/mage-test").unwrap();
-        let mut reader = BufReader::new(file.try_clone().unwrap());
-        let mut writer = BufWriter::new(file);
-        let mut conn = Connection::new(0xFFFF, &mut reader, &mut writer, false, &[1; 32], &[252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6]).unwrap();
+        let mut conn = Connection::new(0xFFFF, Box::new(file.try_clone().unwrap()), false, &[1; 32], &[252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6]).unwrap();
 
         let file2 = OpenOptions::new().read(true).write(true).open("/tmp/mage-test").unwrap();
-        let mut reader2 = BufReader::new(file2.try_clone().unwrap());
-        let mut writer2 = BufWriter::new(file2);
-        let mut conn2 = Connection::new(0xFFFF, &mut reader2, &mut writer2, true, &[2; 32], &[171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111]).unwrap();
+        let mut conn2 = Connection::new(0xFFFF, Box::new(file2.try_clone().unwrap()), true, &[2; 32], &[171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111]).unwrap();
 
         test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[7; 100]);
         test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[7; 100]);
