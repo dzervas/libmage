@@ -3,5 +3,5 @@
 **/*.rs.bk
 .idea
 Cargo.lock
-example/client.bin
+example/*.bin
 example/mage.h
