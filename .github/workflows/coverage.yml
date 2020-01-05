@@ -1,0 +1,15 @@
+name: Rust
+
+on: [push, pull_request]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: Setup Dependencies
+      run: cargo install cargo-tarpaulin
+    - name: Check Coverage
+      run: cargo tarpaulin -v --coveralls ${{ secrets.COVERALLS_TOKEN }}
