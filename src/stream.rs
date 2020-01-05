@@ -211,12 +211,17 @@ mod tests {
         let mut server = Stream::new(true, &[2; 32], vec![171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111].as_slice()).unwrap();
         let mut client = Stream::new(false, &[1; 32], vec![252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6].as_slice()).unwrap();
 
+        client.max_size(100);
+        server.max_size(100);
         test_stream_chunking(true, client.borrow_mut(), server.borrow_mut(), 0, 0, &[]);
         test_stream_chunking(true, server.borrow_mut(), client.borrow_mut(), 0, 0, &[]);
+        client.id(false);
         test_stream_chunking(true, client.borrow_mut(), server.borrow_mut(), 13, 8, &[3u8; 4]);
         test_stream_chunking(true, server.borrow_mut(), client.borrow_mut(), 13, 8, &[3u8; 4]);
+        client.sequence(false);
         test_stream_chunking(true, client.borrow_mut(), server.borrow_mut(), 13, 8, &[4u8; 512]);
         test_stream_chunking(true, server.borrow_mut(), client.borrow_mut(), 13, 8, &[4u8; 512]);
+        client.data_len(false);
         test_stream_chunking(false, server.borrow_mut(), client.borrow_mut(), 0x1FFFFFF, 8, &[4u8; 512]);
         test_stream_chunking(false, server.borrow_mut(), client.borrow_mut(), 0x1FFFF, 0x1F, &[4u8; 512]);
     }

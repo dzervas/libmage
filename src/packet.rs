@@ -165,7 +165,7 @@ mod tests {
 
 	#[test]
 	fn packet() {
-        let pc = PacketConfig {
+        let mut pc = PacketConfig {
         	has_id: true,
         	has_sequence: true,
         	has_data_len: true,
@@ -174,6 +174,13 @@ mod tests {
 		let (p1, _) = pc.serialize(0x1234, 1, 1, &[2u8; 3]).unwrap();
 		let (p2, _) = pc.serialize(0x1234, 1, 2, &[2u8; 3]).unwrap();
 		let (p3, _) = pc.serialize(0x1234, 1, 2, &[2u8; 3]).unwrap();
+
+		pc = PacketConfig {
+			has_id: true,
+			has_sequence: true,
+			has_data_len: false,
+			max_size: 256usize,
+		};
 		let (p4, _) = pc.serialize(0, 1, 7, &[2u8; 3]).unwrap();
 
 		// Test config overflows
@@ -188,7 +195,8 @@ mod tests {
 		assert_eq!(p2, p3);
 		assert_ne!(p1, p2);
 
-		let (pd1, pd, _) = PacketConfig::deserialize(p1.as_slice());
+		let (pd1, pd, pdl) = PacketConfig::deserialize(p1.as_slice());
+		assert!(pdl < pc.max_size, "Data Length should be <= initial PacketConfig max_size");
 		let (pd2, _, _) = PacketConfig::deserialize(p2.as_slice());
 		let (pd3, _, _) = PacketConfig::deserialize(p3.as_slice());
 		let (pd4, _, _) = PacketConfig::deserialize(p4.as_slice());

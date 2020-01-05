@@ -9,6 +9,7 @@ use libc::ssize_t;
 
 lazy_static!{
     static ref CONN: Mutex<Connection> = {
+        // TODO: Choose transport (idea is to have many) using compile-time flags (or config file for server)
         let tcpstream = TcpStream::connect("127.0.0.1:4444").unwrap();
         let conn = Connection::new(0, Box::new(tcpstream), false, &[1; 32], &[252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6]).unwrap();
 
@@ -19,7 +20,7 @@ lazy_static!{
 // TODO: bind, listen, accept
 #[no_mangle]
 pub extern fn connect(_socket: c_int, _sockaddr: *const c_void, _address_len: *mut c_void) -> c_int {
-    // TODO: Instanciate the connection here? how?
+    // TODO: Instantiate the connection here? how?
     0
 }
 

@@ -86,12 +86,10 @@ impl Connection {
 
         for (k, v) in self.channels.iter() {
             for (_, r) in v {
-                match r.try_recv() {
-                    Ok(d) => {
-                        buf.entry(*k).or_insert(Vec::new()).append(d.to_vec().borrow_mut());
-                    },
-                    _ => {}
-                };
+                let d = r.try_recv();
+                if d.is_ok() {
+                    buf.entry(*k).or_insert(Vec::new()).append(d.unwrap().to_vec().borrow_mut());
+                }
             }
         }
 
@@ -175,8 +173,8 @@ mod tests {
 
         test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[7; 100]);
         test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[7; 100]);
-        test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[7; 1]);
-        test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[7; 1]);
+        test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[]);
+        test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[]);
         // TODO: Find a way to keep the connection open even after error
 //        test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[7; 100000]);
 //        test_rw(false, conn2.borrow_mut(), conn.borrow_mut(), &[7; 100000]);
@@ -193,7 +191,7 @@ mod tests {
             test_rw(true, chan2.borrow_mut(), chan.borrow_mut(), &[7; 100]);
             test_rw(true, chan_other.borrow_mut(), chan2_other.borrow_mut(), &[7; 100]);
             test_rw(true, chan2_other.borrow_mut(), chan_other.borrow_mut(), &[7; 100]);
-            // Connection dies after error...
+            // Connection dies after error... (see to do above channels)
 //            test_rw(false, chan_other.borrow_mut(), chan2_other.borrow_mut(), &[7; 100000]);
 //            test_rw(false, chan2_other.borrow_mut(), chan_other.borrow_mut(), &[7; 100000]);
             // This blocks
@@ -216,7 +214,7 @@ mod tests {
 
     #[cfg_attr(tarpaulin, skip)]
     fn test_rw(succ: bool, a: &mut impl Write, b: &mut impl Read, data: &[u8]) {
-        let mut buf = [0u8; 2048];
+        let mut buf = [0u8; 256];
 
         // Should be always ok to write & flush
         a.write(data).unwrap();
@@ -225,6 +223,6 @@ mod tests {
 
         assert_eq!(r.is_ok(), succ);
         if succ { assert_eq!(&buf[..r.unwrap()], data); }
-//        else { assert_ne!(&buf[..r.unwrap()], data); }
+        else { assert_ne!(&buf[..r.unwrap()], data); }
     }
 }
