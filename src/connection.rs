@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::borrow::BorrowMut;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 pub trait ReadWrite: Read + Write + Sync + Send {}
 impl<T: ?Sized + Read + Write + Sync + Send> ReadWrite for T {}
 
@@ -33,9 +34,8 @@ impl Connection {
 
     pub fn read_all_channels(&mut self) -> Result<HashMap<u8, Vec<u8>>> {
         let mut result: HashMap<u8, Vec<u8>> = HashMap::new();
-        let mut original = [0u8; 256];
-        // TODO: Handle too small buffer
-        let size = self.rw.read(&mut original)?;
+        let mut original = vec![];
+        let size = self.rw.read_to_end(&mut original)?;
 
         let packets = self.stream.dechunk(&original[..size])?;
 
@@ -178,12 +178,10 @@ mod tests {
         test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[7; 1]);
         test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[7; 1]);
         // TODO: Find a way to keep the connection open even after error
-//        test_rw(false, conn.borrow_mut(), conn2.borrow_mut(), &[7; 100000]);
+//        test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[7; 100000]);
 //        test_rw(false, conn2.borrow_mut(), conn.borrow_mut(), &[7; 100000]);
 
         // Channels
-        println!("Channels:");
-
         let mut chan = conn.get_channel(4);
         let mut chan_other = conn.get_channel(0xF);
 
@@ -195,7 +193,7 @@ mod tests {
             test_rw(true, chan2.borrow_mut(), chan.borrow_mut(), &[7; 100]);
             test_rw(true, chan_other.borrow_mut(), chan2_other.borrow_mut(), &[7; 100]);
             test_rw(true, chan2_other.borrow_mut(), chan_other.borrow_mut(), &[7; 100]);
-            // TODO: Find a way to keep the channel open even after error
+            // Connection dies after error...
 //            test_rw(false, chan_other.borrow_mut(), chan2_other.borrow_mut(), &[7; 100000]);
 //            test_rw(false, chan2_other.borrow_mut(), chan_other.borrow_mut(), &[7; 100000]);
             // This blocks

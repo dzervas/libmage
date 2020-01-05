@@ -41,7 +41,10 @@ impl PartialOrd for Packet {
 
 impl PartialEq for Packet {
 	fn eq(&self, other: &Self) -> bool {
-		self.sequence == other.sequence
+		self.channel == other.channel &&
+			self.id == other.id &&
+			self.sequence == other.sequence &&
+            self.data == other.data
 	}
 }
 
@@ -169,7 +172,6 @@ mod tests {
 			max_size: 256usize,
 		};
 		let (p1, _) = pc.serialize(0x1234, 1, 1, &[2u8; 3]).unwrap();
-        // TODO: Add equality test that takes into account ID, channel, sequence, data
 		let (p2, _) = pc.serialize(0x1234, 1, 2, &[2u8; 3]).unwrap();
 		let (p3, _) = pc.serialize(0x1234, 1, 2, &[2u8; 3]).unwrap();
 		let (p4, _) = pc.serialize(0, 1, 7, &[2u8; 3]).unwrap();

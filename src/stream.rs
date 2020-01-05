@@ -217,28 +217,33 @@ mod tests {
         test_stream_chunking(true, server.borrow_mut(), client.borrow_mut(), 13, 8, &[3u8; 4]);
         test_stream_chunking(true, client.borrow_mut(), server.borrow_mut(), 13, 8, &[4u8; 512]);
         test_stream_chunking(true, server.borrow_mut(), client.borrow_mut(), 13, 8, &[4u8; 512]);
-//        test_stream_chunking(false, server.borrow_mut(), client.borrow_mut(), 0x1FFFFFF, 8, &[4u8; 512]);
-//        test_stream_chunking(false, server.borrow_mut(), client.borrow_mut(), 0x1FFFF, 0x1F, &[4u8; 512]);
+        test_stream_chunking(false, server.borrow_mut(), client.borrow_mut(), 0x1FFFFFF, 8, &[4u8; 512]);
+        test_stream_chunking(false, server.borrow_mut(), client.borrow_mut(), 0x1FFFF, 0x1F, &[4u8; 512]);
     }
 
     #[cfg_attr(tarpaulin, skip)]
     fn test_stream_chunking(succ: bool, a: &mut Stream, b: &mut Stream, id: u32, ch: u8, data: &[u8]) {
-        let chunked = a.chunk(id, ch, data.clone()).unwrap();
+        let chunked = match a.chunk(id, ch, data.clone()) {
+            Ok(c) => c,
+            Err(_e) => {
+                if succ { return assert!(false, "Chunk should have been created!"); }
+                else { return; }
+            }
+        };
         let mut aligned: Vec<u8> = Vec::new();
         let mut findat: Vec<u8> = Vec::new();
-//        let chunked_len = chunked.len();
 
         for chunk in chunked {
-            // TODO: Find a way to take data from chunks to test each chunk
-            // This does not work as the first chunk of the first test is the header
-//            assert_eq!(succ, b.dechunk(chunk.clone()).is_ok());
             aligned.extend(chunk);
         }
 
-        let dechunked = b.dechunk(aligned.as_slice()).unwrap();
-
-        // The header is another chunk only the first time, so I can't test that
-//        assert_eq!(dechunked.len(), chunked_len);
+        let dechunked = match b.dechunk(aligned.as_slice()) {
+            Ok(d) => d,
+            Err(_e) => {
+                if succ { return assert!(false, "Chunk should have been dechunked!"); }
+                else { return; }
+            }
+        };
 
         for d in dechunked {
             findat.extend(d.data);
