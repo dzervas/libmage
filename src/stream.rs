@@ -182,9 +182,13 @@ impl Stream {
     }
 
     // Settings
+    #[allow(dead_code)]
     pub fn id(&mut self, v: bool) -> &mut Self { self.packet_config.has_id = v; self }
+    #[allow(dead_code)]
     pub fn sequence(&mut self, v: bool) -> &mut Self { self.packet_config.has_sequence = v; self }
+    #[allow(dead_code)]
     pub fn data_len(&mut self, v: bool) -> &mut Self { self.packet_config.has_data_len = v; self }
+    #[allow(dead_code)]
     pub fn max_size(&mut self, v: usize) -> &mut Self { self.packet_config.max_size = v; self }
 }
 

@@ -24,6 +24,7 @@ pub struct Packet {
 impl Packet {
 	#[allow(dead_code)]
 	pub fn get_channel(&self) -> u8 { self.channel & 0xF }
+	#[allow(dead_code)]
 	pub fn get_version(&self) -> u8 { self.channel >> 4 }
 }
 
