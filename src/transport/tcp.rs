@@ -13,7 +13,6 @@ impl Listener for Tcp {
 
     fn accept(&self) -> Result<Box<dyn ReadWrite>> {
         match (self as &TcpListener).accept() {
-            // TODO: Use the SocketAddr (d.1)
             Ok(d) => Ok(Box::new(d.0)),
             Err(e) => Err(Box::new(e))
         }

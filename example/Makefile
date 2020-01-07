@@ -3,6 +3,8 @@ CFLAGS=-lmage -L../target/debug/
 
 all: client.bin server.bin
 
+fresh: clean all
+
 libmage.so:
 	cd ..
 	cargo build --lib --manifest-path ../Cargo.toml

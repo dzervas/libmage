@@ -7,13 +7,13 @@ int main() {
 	char buffer[1024] = { 0 };
 
 	printf("connect()\n");
-	connect(0, addr, len);
+	int sock = connect(0, addr, len);
 
 	printf("send(hello)\n");
-	send(0, "hello", 6, 0);
+	send(sock, "hello", 6, 0);
 
 	printf("recv()\n");
-	recv(0, buffer, 1024, 0);
+	recv(sock, buffer, 1024, 0);
 	printf("%s\n", buffer);
 
 	printf("bye");
