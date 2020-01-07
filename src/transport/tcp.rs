@@ -1,16 +1,22 @@
 use transport::{Listener, Result, ReadWrite, Connector};
 use std::net::{TcpListener, TcpStream};
 
-type Tcp = TcpListener;
+pub type Tcp = TcpListener;
 
 impl Listener for Tcp {
-
     fn listen(addr: &'static str) -> Result<Self> {
-        unimplemented!()
+        match TcpListener::bind(addr) {
+            Ok(d) => Ok(d),
+            Err(e) => Err(Box::new(e))
+        }
     }
 
     fn accept(&self) -> Result<Box<dyn ReadWrite>> {
-        unimplemented!()
+        match (self as &TcpListener).accept() {
+            // TODO: Use the SocketAddr (d.1)
+            Ok(d) => Ok(Box::new(d.0)),
+            Err(e) => Err(Box::new(e))
+        }
     }
 
 //    fn incoming(&self) -> dyn Iterator<Item=i32> {
