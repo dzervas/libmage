@@ -4,8 +4,9 @@ extern crate lazy_static;
 extern crate libc;
 extern crate sodiumoxide;
 
-pub mod packet;
-pub mod stream;
+mod packet;
+mod stream;
 pub mod connection;
 pub mod channel;
 pub mod sys_socket;
+pub mod transport;

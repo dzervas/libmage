@@ -5,12 +5,9 @@ use channel::Channel;
 use crossbeam_channel::{Sender, Receiver, bounded as ch};
 use std::collections::HashMap;
 use std::borrow::BorrowMut;
+use transport::ReadWrite;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-
-pub trait ReadWrite: Read + Write + Sync + Send {}
-impl<T: ?Sized + Read + Write + Sync + Send> ReadWrite for T {}
-
 
 pub struct Connection {
     pub id: u32,
