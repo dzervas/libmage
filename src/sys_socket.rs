@@ -6,14 +6,16 @@ use lazy_static::lazy_static;
 use std::sync::Mutex;
 use libc::ssize_t;
 
-use transport;
-use transport::{Connector, Listener};
+//use transport;
+use transport::{Connector, Listener, tcp};
 
 // TODO: These should be cfg-ish. Friendlier config.
 const ADDRESS: &'static str = "127.0.0.1:4444";
-type CONNECTOR = transport::tcp::Tcp;
-type LISTENER = transport::tcp::Tcp;
+type CONNECTOR = tcp::Tcp;
+type LISTENER = tcp::Tcp;
 
+// Known keys: vec![1; 32] -> public vec![171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111]
+// Known keys: vec![2; 32] -> public vec![252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6]
 const REMOTE_KEY: &[u8] = &[252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6];
 const SEED_KEY: &[u8] = &[1; 32];
 
@@ -31,8 +33,10 @@ lazy_static!{
     static ref ACCEPT: Mutex<Vec<LISTENER>> = Mutex::new(vec![]);
 }
 
+// TODO: Handle all panics - not supported by FFI, undefined behaviour
+
 #[no_mangle]
-pub extern fn connect(_socket: c_int, _sockaddr: *const c_void, _address_len: *mut c_void) -> c_int {
+pub extern fn abi_connect(_socket: c_int, _sockaddr: *const c_void, _address_len: *mut c_void) -> c_int {
     let mut socket_mut = SOCKET.lock().unwrap();
     if BASE_SOCKET_FD + socket_mut.len() as c_int >= BASE_ACCEPT_FD {
         return -1 // Maybe we should cycle? -1 is erroneous state and programs know it
@@ -48,8 +52,11 @@ pub extern fn connect(_socket: c_int, _sockaddr: *const c_void, _address_len: *m
 }
 
 #[no_mangle]
-pub extern fn send(socket: c_int, msg: *const c_void, size: usize, _flags: c_int) -> ssize_t {
+pub extern fn abi_send(socket: c_int, msg: *const c_void, size: usize, _flags: c_int) -> ssize_t {
+    // TODO: Use snappy compress https://doc.rust-lang.org/nomicon/ffi.html#creating-a-safe-interface to ensure safety of given buffers
+    // TODO: Handle nulls
     let buf = unsafe { from_raw_parts(msg as *const u8, size) };
+    println!("-> {:?}", buf);
 
     // TODO: Get rid of all those unwraps maybe? Maybe try to recover?
     let mut socket_mut = SOCKET.lock().unwrap();
@@ -58,23 +65,20 @@ pub extern fn send(socket: c_int, msg: *const c_void, size: usize, _flags: c_int
 }
 
 #[no_mangle]
-pub extern fn recv(socket: c_int, msg: *mut c_void, size: usize, _flags: c_int) -> ssize_t {
+pub extern fn abi_recv(socket: c_int, msg: *mut c_void, size: usize, _flags: c_int) -> ssize_t {
     let buf = unsafe { from_raw_parts_mut(msg as *mut u8, size) };
 
     let mut socket_mut = SOCKET.lock().unwrap();
     let sock = socket_mut.get_mut((socket - BASE_SOCKET_FD) as usize).unwrap();
-    sock.read(buf).unwrap() as isize
+    let res = sock.read(buf).unwrap();
+    println!("<- {:?}: {:?}", res, buf);
+
+    res as isize
 }
 
 #[no_mangle]
-pub extern fn listen(_socket: c_int, _backlog: c_int) -> c_int {
-//    let socket_imm = SOCKET.lock().unwrap();
-//    if BASE_ACCEPT_FD + socket_imm.len() as c_int >= BASE_SOCKET_FD {
-//        return -1 // Maybe we should cycle? -1 is erroneous state and programs know it
-//    }
-//    drop(socket_imm);
-
-    println!("yoooo1");
+pub extern fn abi_listen(_socket: c_int, _backlog: c_int) -> c_int {
+    println!("listen called");
     let new_accept = LISTENER::listen(ADDRESS).unwrap();
 
     let mut accept_mut = ACCEPT.lock().unwrap();
@@ -86,7 +90,7 @@ pub extern fn listen(_socket: c_int, _backlog: c_int) -> c_int {
 }
 
 #[no_mangle]
-pub extern fn accept(socket: c_int, _sockaddr: *const c_void, _address_len: *mut c_void) -> c_int {
+pub extern fn abi_accept(socket: c_int, _sockaddr: *const c_void, _address_len: *mut c_void) -> c_int {
     let mut socket_mut = SOCKET.lock().unwrap();
     if BASE_SOCKET_FD + socket_mut.len() as c_int >= BASE_ACCEPT_FD {
         return -1 // Maybe we should cycle? -1 is erroneous state and programs know it
@@ -102,11 +106,17 @@ pub extern fn accept(socket: c_int, _sockaddr: *const c_void, _address_len: *mut
     BASE_SOCKET_FD + socket_mut.len() as c_int - 1  // len() is +1
 }
 
-//#[no_mangle]
-//pub extern fn bind(_socket: c_int, _sockaddr: *const c_void, _address_len: *mut c_void) -> c_int {
-//0
-//}
-//
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ptr::{null, null_mut};
 
-//#[no_mangle]
-//pub unsafe extern fn flush(s: &mut connection::Connection) { CONN.lock().unwrap().flush().unwrap() }
+    #[test]
+    fn listening() {
+//        let listener = abi_listen(0, 0);
+//        println!("listener: {:?}", listener);
+
+//        let sock = abi_accept(listener, null(), null_mut());
+//        println!("sock: {:?}", sock);
+    }
+}

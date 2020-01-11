@@ -1,4 +1,4 @@
-use transport::{Listener, Result, ReadWrite, Connector};
+use super::{Listener, Result, ReadWrite, Connector};
 use std::net::{TcpListener, TcpStream};
 
 pub type Tcp = TcpListener;
@@ -13,7 +13,11 @@ impl Listener for Tcp {
 
     fn accept(&self) -> Result<Box<dyn ReadWrite>> {
         match (self as &TcpListener).accept() {
-            Ok(d) => Ok(Box::new(d.0)),
+            Ok(d) => {
+                // TODO: Remove this?
+                d.0.set_nodelay(true).expect("set_nodelay call failed");
+                Ok(Box::new(d.0))
+            },
             Err(e) => Err(Box::new(e))
         }
     }
@@ -26,7 +30,11 @@ impl Listener for Tcp {
 impl Connector for Tcp {
     fn connect(addr: &'static str) -> Result<Box<dyn ReadWrite>> {
         match TcpStream::connect(addr) {
-            Ok(c) => Ok(Box::new(c)),
+            Ok(d) => {
+                // TODO: Remove this?
+                d.set_nodelay(true).expect("set_nodelay call failed");
+                Ok(Box::new(d))
+            }
             Err(e) => Err(Box::new(e))
         }
     }

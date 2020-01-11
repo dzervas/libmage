@@ -1,5 +1,5 @@
-extern crate custom_error;
 extern crate crossbeam_channel;
+extern crate custom_error;
 extern crate lazy_static;
 extern crate libc;
 extern crate sodiumoxide;
