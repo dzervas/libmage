@@ -6,12 +6,12 @@ use lazy_static::lazy_static;
 use std::sync::Mutex;
 
 //use transport;
-use transport::{Connector, Listener, tcp};
+use transport::{Connector, Listener, Tcp};
 
 // TODO: These should be cfg-ish. Friendlier config.
 const ADDRESS: &'static str = "127.0.0.1:4444";
-type CONNECTOR = tcp::Tcp;
-type LISTENER = tcp::Tcp;
+type CONNECTOR = Tcp;
+type LISTENER = Tcp;
 
 // Known keys: vec![1; 32] -> public vec![171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111]
 // Known keys: vec![2; 32] -> public vec![252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6]

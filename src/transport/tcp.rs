@@ -1,9 +1,9 @@
-use super::{Listener, Result, ReadWrite, Connector};
+use super::{Listener, Result, Connector};
 use std::net::{TcpListener, TcpStream};
 
 pub type Tcp = TcpListener;
 
-impl Listener for Tcp {
+impl Listener<TcpStream> for Tcp {
     fn listen(addr: &'static str) -> Result<Self> {
         match TcpListener::bind(addr) {
             Ok(d) => Ok(d),
@@ -11,13 +11,9 @@ impl Listener for Tcp {
         }
     }
 
-    fn accept(&self) -> Result<Box<dyn ReadWrite>> {
+    fn accept(&self) -> Result<TcpStream> {
         match (self as &TcpListener).accept() {
-            Ok(d) => {
-                // TODO: Remove this?
-                d.0.set_nodelay(true).expect("set_nodelay call failed");
-                Ok(Box::new(d.0))
-            },
+            Ok(d) => Ok(d.0),
             Err(e) => Err(Box::new(e))
         }
     }
@@ -27,14 +23,10 @@ impl Listener for Tcp {
 //    }
 }
 
-impl Connector for Tcp {
-    fn connect(addr: &'static str) -> Result<Box<dyn ReadWrite>> {
+impl Connector<TcpStream> for Tcp {
+    fn connect(addr: &'static str) -> Result<TcpStream> {
         match TcpStream::connect(addr) {
-            Ok(d) => {
-                // TODO: Remove this?
-                d.set_nodelay(true).expect("set_nodelay call failed");
-                Ok(Box::new(d))
-            }
+            Ok(d) => Ok(d),
             Err(e) => Err(Box::new(e))
         }
     }
