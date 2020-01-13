@@ -9,6 +9,14 @@ use std::io::{Read, Write};
 pub trait ReadWrite: Read + Write + Sync + Send {}
 impl<T: ?Sized + Read + Write + Sync + Send> ReadWrite for T {}
 
+// Listener/Connector traits
+// It should be noted that both can be part of either
+// a server or a client! If you have a reverse shell,
+// the listener is the server, but if you have a bind
+// shell the connector is the server!
+// Client: pwned machine
+// Server: attacker's machine
+// Who listens and who connects is irrelevant
 pub trait Listener<T: ReadWrite>: Sized + Send {
     fn listen(addr: &'static str) -> Result<Self>;
     // TODO: Add some kind of address struct?

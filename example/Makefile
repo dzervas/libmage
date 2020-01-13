@@ -1,5 +1,5 @@
 CC=cc
-CFLAGS=-lmage -L../target/debug/
+CFLAGS=-lmage -L../target/debug/ -I../target/debug/
 
 all: client.bin server.bin
 
@@ -9,10 +9,7 @@ libmage.so:
 	cd ..
 	cargo build --lib --manifest-path ../Cargo.toml
 
-mage.h:
-	cbindgen -l c -o mage.h ../
-
-%.bin: %.c mage.h
+%.bin: %.c libmage.so
 	$(CC) $(CFLAGS) -o $@ $<
 	chmod u+x $@
 	@echo -e "\e[92mTo run the binary 'LD_LIBRARY_PATH=../target/debug ./$@'\e[0m"

@@ -15,3 +15,6 @@ sodiumoxide = "*"
 crossbeam-channel = "*"
 lazy_static = "*"
 libc = "*"
+
+[build-dependencies]
+cbindgen = "*"
