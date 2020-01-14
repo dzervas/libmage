@@ -13,6 +13,7 @@ fn main() {
         .generate();
 
     if cgen.is_ok() {
+        // For some reason when using tarpaulin, the following fails
         cgen.unwrap().write_to_file(format!("{}/../../../mage.h", out_dir));
     } else {
         eprintln!("Unable to generate cbindgen headers!");
