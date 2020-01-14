@@ -79,7 +79,7 @@ mod tests {
         ($succ: expr, $func: expr) => {
             match $func {
                 Ok(d) => d,
-                Err(e) => return assert!($succ, format!("{}", e))
+                Err(e) => return assert!($succ, e.to_string())
             };
         }
     }

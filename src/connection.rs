@@ -147,7 +147,7 @@ mod tests {
 
     #[test]
     fn new() {
-        let file = File::create("/tmp/mage-test").unwrap();
+        let file = File::create(if cfg!(windows) { "%TEMP%\\mage-test" } else { "/tmp/mage-test" }).unwrap();
 
         assert!(Connection::new(10, Box::new(file.try_clone().unwrap()), true, &[1; 32], &[2; 32]).is_ok(), "Can't create dummy connection");
         assert!(Connection::new(10, Box::new(file.try_clone().unwrap()), true, &[1; 31], &[2; 32]).is_err(), "Key seed is too small, must be 32 bytes");
@@ -162,10 +162,10 @@ mod tests {
 
     #[test]
     fn read_write() {
-        let file = OpenOptions::new().read(true).write(true).create(true).open("/tmp/mage-test").unwrap();
+        let file = OpenOptions::new().read(true).write(true).create(true).open(if cfg!(windows) { "%TEMP%\\mage-test" } else { "/tmp/mage-test" }).unwrap();
         let mut conn = Connection::new(0xFFFF, Box::new(file.try_clone().unwrap()), false, &[1; 32], &[252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6]).unwrap();
 
-        let file2 = OpenOptions::new().read(true).write(true).open("/tmp/mage-test").unwrap();
+        let file2 = OpenOptions::new().read(true).write(true).open(if cfg!(windows) { "%TEMP%\\mage-test" } else { "/tmp/mage-test" }).unwrap();
         let mut conn2 = Connection::new(0xFFFF, Box::new(file2.try_clone().unwrap()), true, &[2; 32], &[171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111]).unwrap();
 
         test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[7; 100]);
