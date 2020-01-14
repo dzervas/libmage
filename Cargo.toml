@@ -5,7 +5,6 @@ authors = ["Dimitris Zervas <dzervas@dzervas.gr>"]
 
 [lib]
 name = "mage"
-#crate-type = ["lib", "dylib", "rlib", "cdylib", "staticlib"]
 crate-type = ["lib", "cdylib", "staticlib"]
 path = "src/lib.rs"
 
