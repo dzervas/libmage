@@ -12,10 +12,15 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - run: git fetch --no-tags --prune --depth=1 origin ${GITHUB_REF}
-      - name: Setup Dependencies
-        run: cargo install -f cargo-tarpaulin
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
       - name: Test Project on ${{ matrix.os }}
         run: cargo test -v
+
       - name: Generate Coverage report
-        if: runner.os == "Linux"
-        run: cargo tarpaulin -v -b --coveralls ${{ secrets.COVERALLS_TOKEN }}
+        if: runner.os == 'Linux'
+        run: |
+          cargo install cargo-tarpaulin
+          cargo tarpaulin -v -b --coveralls ${{ secrets.COVERALLS_TOKEN }}
