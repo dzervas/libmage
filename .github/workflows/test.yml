@@ -4,29 +4,18 @@ on: [push, pull_request]
 
 jobs:
   test:
-    runs-on: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
 
     steps:
       - uses: actions/checkout@v2
       - run: git fetch --no-tags --prune --depth=1 origin ${GITHUB_REF}
-      - name: Cache cargo registry
-        uses: actions/cache@v1
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
-      - name: Cache cargo index
-        uses: actions/cache@v1
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.toml') }}
-      - name: Cache cargo build
-        uses: actions/cache@v1
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-${{ hashFiles('src/**.rs') }}-${{ hashFiles('**/Cargo.toml') }}
       - name: Setup Dependencies
         run: cargo install -f cargo-tarpaulin
-      - name: Test Project
+      - name: Test Project on ${{ matrix.os }}
         run: cargo test -v
-      - name: Check Coverage
+      - name: Generate Coverage report
+        if: runner.os == "Linux"
         run: cargo tarpaulin -v -b --coveralls ${{ secrets.COVERALLS_TOKEN }}
