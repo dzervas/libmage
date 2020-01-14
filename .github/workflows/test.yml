@@ -1,4 +1,4 @@
-name: Coverage
+name: Test
 
 on: [push, pull_request]
 
@@ -12,20 +12,20 @@ jobs:
         uses: actions/cache@v1
         with:
           path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
       - name: Cache cargo index
         uses: actions/cache@v1
         with:
           path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.toml') }}
       - name: Cache cargo build
         uses: actions/cache@v1
         with:
           path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('src/**.rs') }}-${{ hashFiles('**/Cargo.toml') }}
       - name: Setup Dependencies
-        run: cargo install cargo-tarpaulin
+        run: cargo install -f cargo-tarpaulin
       - name: Test Project
         run: cargo test -v
       - name: Check Coverage
-        run: cargo tarpaulin -v --coveralls ${{ secrets.COVERALLS_TOKEN }} -b
+        run: cargo tarpaulin -v -b --coveralls ${{ secrets.COVERALLS_TOKEN }}
