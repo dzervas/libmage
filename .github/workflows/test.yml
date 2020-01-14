@@ -17,5 +17,5 @@ jobs:
       - name: Test Project on ${{ matrix.os }}
         run: cargo test -v
       - name: Generate Coverage report
-        if: runner.os == "Linux"
+        if: runner.os == 'Linux'
         run: cargo tarpaulin -v -b --coveralls ${{ secrets.COVERALLS_TOKEN }}
