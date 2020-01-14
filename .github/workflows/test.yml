@@ -7,7 +7,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
+        # Sets BRANCH to be refs/tags/v<version> -> <version>
+      - run: echo ::set-env name=BRANCH::$(echo ${GITHUB_REF#refs/tags/v})
+      - run: git fetch --no-tags --prune --depth=1 origin ${BRANCH}
       - name: Cache cargo registry
         uses: actions/cache@v1
         with:
