@@ -8,9 +8,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-        # Sets BRANCH to be refs/tags/v<version> -> <version>
-      - run: echo ::set-env name=BRANCH::$(echo ${GITHUB_REF#refs/tags/v})
-      - run: git fetch --no-tags --prune --depth=1 origin ${BRANCH}
+      - run: git fetch --no-tags --prune --depth=1 origin ${GITHUB_REF}
       - name: Cache cargo registry
         uses: actions/cache@v1
         with:

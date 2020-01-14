@@ -31,3 +31,11 @@ impl Connector<TcpStream> for Tcp {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ::test_transport;
+
+    test_transport!(test_transport_tcp, Tcp, TcpStream);
+}

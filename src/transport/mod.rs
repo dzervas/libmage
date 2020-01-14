@@ -29,8 +29,8 @@ pub trait Connector<T: ReadWrite>: Sized + Send {
     fn connect(addr: &'static str) -> Result<T>;
 }
 
-//pub trait Transport: Listener + Connector {}
-//impl<T: Listener + Connector> Transport for T {}
+pub trait Transport<RW: ReadWrite>: Listener<RW> + Connector<RW> {}
+impl<T: Listener<RW> + Connector<RW> + Sized + Send, RW: ReadWrite> Transport<RW> for T {}
 
 
 // Buffered bidirectional communication
@@ -66,3 +66,57 @@ pub trait Connector<T: ReadWrite>: Sized + Send {
 //        self.writer.flush()
 //    }
 //}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread::{spawn, sleep};
+    use std::time::Duration;
+    use std::borrow::BorrowMut;
+
+    // Test listen, accept, connect
+    #[cfg_attr(tarpaulin, skip)]
+    pub fn test_listen_conn_inner<T: Transport<RW>, RW: ReadWrite>(addr: &'static str, c2l: Vec<u8>, mut l2c: Vec<u8>) {
+        let mut c2l_clone = c2l.clone();
+        let l2c_clone = l2c.clone();
+
+        let thread = spawn(move || {
+            let listener = T::listen(addr).unwrap();
+            let mut rw = listener.accept().unwrap();
+
+            let buffer = c2l_clone.borrow_mut();
+
+            rw.read(buffer).unwrap();
+            rw.write(l2c_clone.as_slice()).unwrap();
+
+            assert_eq!(buffer.to_vec(), c2l_clone);
+        });
+
+        sleep(Duration::from_millis(100));
+        let mut rw = T::connect(addr).unwrap();
+
+        let buffer = l2c.as_mut();
+
+        rw.write(c2l.as_slice()).unwrap();
+        rw.read(buffer).unwrap();
+
+        assert_eq!(buffer.to_vec(), l2c);
+
+        thread.join().unwrap();
+    }
+
+    // Transport Tests
+    #[macro_export]
+    macro_rules! test_transport {
+        ($name:ident, $t:ty, $rw:ty) => {
+            use transport::tests::test_listen_conn_inner;
+
+            #[test]
+            fn $name() {
+                test_listen_conn_inner::<$t, $rw>("127.0.0.1:13337", vec![1; 10], vec![4; 10]);
+                test_listen_conn_inner::<$t, $rw>("127.0.0.1:13337", vec![1; 512], vec![4; 512]);
+                test_listen_conn_inner::<$t, $rw>("127.0.0.1:13337", vec![1; 10000], vec![4; 10000]);
+            }
+        }
+    }
+}
