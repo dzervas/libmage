@@ -1,5 +1,5 @@
-[![Coverage Status](https://coveralls.io/repos/github/dzervas/mage-rs/badge.svg?branch=master)](https://coveralls.io/github/dzervas/mage-rs?branch=master)
-![Tests](https://github.com/dzervas/mage-rs/workflows/Tests/badge.svg)
+[![Coverage Status](https://coveralls.io/repos/github/dzervas/mage/badge.svg?branch=master)](https://coveralls.io/github/dzervas/mage?branch=master)
+![Tests](https://github.com/dzervas/mage/workflows/Tests/badge.svg)
 
 # Mage
 
