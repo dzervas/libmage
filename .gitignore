@@ -5,3 +5,4 @@
 Cargo.lock
 example/*.bin
 example/mage.h
+.mage-test.tmp
