@@ -6,14 +6,14 @@ int main() {
 	void *len = calloc(1, 0);
 	char buffer[1024] = { 0 };
 
-	printf("abi_connect()\n");
-	int sock = abi_connect(0, addr, len);
+	printf("ffi_connect()\n");
+	int sock = ffi_connect(0, addr, len);
 
-	printf("abi_send(%d, hello)\n", sock);
-	abi_send(sock, "hello", 6, 0);
+	printf("ffi_send(%d, hello)\n", sock);
+	ffi_send(sock, "hello", 6, 0);
 
-	printf("abi_recv(%d)\n", sock);
-	abi_recv(sock, buffer, 28, 0);
+	printf("ffi_recv(%d)\n", sock);
+	ffi_recv(sock, buffer, 28, 0);
 	printf("%s\n", buffer);
 
 	printf("bye");

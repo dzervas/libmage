@@ -7,5 +7,7 @@ mod packet;
 mod stream;
 pub mod connection;
 pub mod channel;
-pub mod sys_socket;
 pub mod transport;
+
+#[cfg(feature = "ffi")]
+pub mod sys_socket;

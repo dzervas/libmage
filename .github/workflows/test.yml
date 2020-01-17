@@ -17,10 +17,10 @@ jobs:
         with:
           toolchain: stable
       - name: Test Project on ${{ matrix.os }}
-        run: cargo test -v
+        run: cargo test -v --all-features
 
       - name: Generate Coverage report
         if: runner.os == 'Linux'
         run: |
           cargo install cargo-tarpaulin
-          cargo tarpaulin -v -b --coveralls ${{ secrets.COVERALLS_TOKEN }}
+          cargo tarpaulin -v -b --all-features --coveralls ${{ secrets.COVERALLS_TOKEN }}

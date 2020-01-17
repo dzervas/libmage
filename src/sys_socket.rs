@@ -1,11 +1,11 @@
 use std::io::{Read, Write};
 use std::os::raw::{c_void, c_int};
-use connection::Connection;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
-use lazy_static::lazy_static;
 use std::sync::Mutex;
 
-//use transport;
+use lazy_static::lazy_static;
+
+use connection::Connection;
 use transport::{Connector, Listener, Tcp};
 
 // TODO: These should be cfg-ish. Friendlier config.
@@ -33,15 +33,15 @@ const LISTENER_REMOTE_KEY: &[u8] = &[171, 47, 202, 50, 137, 131, 34, 194, 8, 251
 const BASE_SOCKET_FD: c_int = 1000;
 const BASE_ACCEPT_FD: c_int = BASE_SOCKET_FD + 1000;
 
-lazy_static!{
-    static ref SOCKET: Mutex<Vec<Connection>> = Mutex::new(vec![]);
-    static ref ACCEPT: Mutex<Vec<LISTENER>> = Mutex::new(vec![]);
+lazy_static! {
+    static ref SOCKET: Mutex<Vec<Connection>> = Mutex::new(Vec::new());
+    static ref ACCEPT: Mutex<Vec<LISTENER>> = Mutex::new(Vec::new());
 }
 
 // TODO: Handle all panics - not supported by FFI, undefined behaviour
 
 #[no_mangle]
-pub extern fn abi_connect(_socket: c_int, _sockaddr: *const c_void, _address_len: *mut c_void) -> c_int {
+pub extern fn ffi_connect(_socket: c_int, _sockaddr: *const c_void, _address_len: *mut c_void) -> c_int {
     eprintln!("Connecting");
     let new_conn = CONNECTOR::connect(ADDRESS).unwrap();
 
@@ -57,7 +57,7 @@ pub extern fn abi_connect(_socket: c_int, _sockaddr: *const c_void, _address_len
 }
 
 #[no_mangle]
-pub extern fn abi_send(socket: c_int, msg: *const c_void, size: usize, _flags: c_int) -> isize {
+pub extern fn ffi_send(socket: c_int, msg: *const c_void, size: usize, _flags: c_int) -> isize {
     // TODO: Use snappy compress https://doc.rust-lang.org/nomicon/ffi.html#creating-a-safe-interface to ensure safety of given buffers
     // TODO: Handle nulls
     let buf = unsafe { from_raw_parts(msg as *const u8, size) };
@@ -70,7 +70,7 @@ pub extern fn abi_send(socket: c_int, msg: *const c_void, size: usize, _flags: c
 }
 
 #[no_mangle]
-pub extern fn abi_recv(socket: c_int, msg: *mut c_void, size: usize, _flags: c_int) -> isize {
+pub extern fn ffi_recv(socket: c_int, msg: *mut c_void, size: usize, _flags: c_int) -> isize {
     let buf = unsafe { from_raw_parts_mut(msg as *mut u8, size) };
 
     let mut socket_mut = SOCKET.lock().unwrap();
@@ -79,7 +79,7 @@ pub extern fn abi_recv(socket: c_int, msg: *mut c_void, size: usize, _flags: c_i
 }
 
 #[no_mangle]
-pub extern fn abi_listen(_socket: c_int, _backlog: c_int) -> c_int {
+pub extern fn ffi_listen(_socket: c_int, _backlog: c_int) -> c_int {
     let new_accept = LISTENER::listen(ADDRESS).unwrap();
 
     let mut accept_mut = ACCEPT.lock().unwrap();
@@ -91,7 +91,7 @@ pub extern fn abi_listen(_socket: c_int, _backlog: c_int) -> c_int {
 }
 
 #[no_mangle]
-pub extern fn abi_accept(socket: c_int, _sockaddr: *const c_void, _address_len: *mut c_void) -> c_int {
+pub extern fn ffi_accept(socket: c_int, _sockaddr: *const c_void, _address_len: *mut c_void) -> c_int {
     let accept_imm = ACCEPT.lock().unwrap();
     println!("Waiting...");
     let accepted = accept_imm.get((socket - BASE_ACCEPT_FD) as usize).unwrap().accept().unwrap().0;
@@ -129,8 +129,8 @@ mod tests {
     #[cfg_attr(tarpaulin, skip)]
     fn listening() {
         let thread = spawn(move || {
-            let listener = abi_listen(0, 0);
-            let sock = abi_accept(listener, null(), null_mut());
+            let listener = ffi_listen(0, 0);
+            let sock = ffi_accept(listener, null(), null_mut());
 
             let mut data = [4; 10];
 
@@ -141,7 +141,7 @@ mod tests {
         });
 
         sleep(Duration::from_millis(100));
-        let sock = abi_connect(0, null(), null_mut());
+        let sock = ffi_connect(0, null(), null_mut());
 
         let mut data = [1; 10];
 
@@ -159,7 +159,7 @@ mod tests {
         let med_buf = data.as_ptr();
         let buf = med_buf as *const _;
 
-        abi_send(sock, buf, data.len(), 0)
+        ffi_send(sock, buf, data.len(), 0)
     }
 
     #[cfg_attr(tarpaulin, skip)]
@@ -167,6 +167,6 @@ mod tests {
         println!("Recv");
         let buf = data.as_mut_ptr() as *mut _;
 
-        abi_recv(sock, buf, data.len(), 0)
+        ffi_recv(sock, buf, data.len(), 0)
     }
 }

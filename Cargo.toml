@@ -14,5 +14,10 @@ sodiumoxide = "*"
 lazy_static = "*"
 libc = "*"
 
+[features]
+default = [ "ffi" ]
+
+ffi = []
+
 [build-dependencies]
 cbindgen = "*"

@@ -9,18 +9,18 @@ int main() {
 	/*printf("bind()\n");*/
 	/*bind(0, addr, 0);*/
 
-	printf("abi_listen()\n");
-	int fd = abi_listen(0, 3);
+	printf("ffi_listen()\n");
+	int fd = ffi_listen(0, 3);
 
-	printf("abi_accept(%d)\n", fd);
-	int sock = abi_accept(fd, addr, len);
+	printf("ffi_accept(%d)\n", fd);
+	int sock = ffi_accept(fd, addr, len);
 
-	printf("abi_recv(%d)\n", sock);
-	abi_recv(sock, buffer, 100, 0);
+	printf("ffi_recv(%d)\n", sock);
+	ffi_recv(sock, buffer, 100, 0);
 	printf("%s\n", buffer);
 
-	printf("abi_send(%d, world)\n", sock);
-	abi_send(sock, "world" , 6, 0);
+	printf("ffi_send(%d, world)\n", sock);
+	ffi_send(sock, "world" , 6, 0);
 
 	return 0;
 }
