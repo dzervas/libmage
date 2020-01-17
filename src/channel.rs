@@ -1,4 +1,4 @@
-use crossbeam_channel::{Sender, Receiver};
+use std::sync::mpsc::{Sender, Receiver};
 use std::io;
 use std::io::{Read, Write, Error, ErrorKind};
 

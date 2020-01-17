@@ -2,7 +2,7 @@ use std::io;
 use std::io::{Read, Write, Error, ErrorKind};
 use stream::Stream;
 use channel::Channel;
-use crossbeam_channel::{Sender, Receiver, bounded as ch};
+use std::sync::mpsc::{Sender, Receiver, channel as ch};
 use std::collections::HashMap;
 use std::borrow::BorrowMut;
 use transport::ReadWrite;
@@ -58,8 +58,8 @@ impl Connection {
 
     #[allow(dead_code)]
     fn get_channel(&mut self, channel: u8) -> Channel {
-        let (from_ch, to_conn) = ch(0);
-        let (from_conn, to_ch) = ch(0);
+        let (from_ch, to_conn) = ch();
+        let (from_conn, to_ch) = ch();
         self.channels.entry(channel).or_insert(Vec::new()).push((from_conn, to_conn));
         println!("{:?}", self.channels);
 
