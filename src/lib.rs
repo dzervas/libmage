@@ -9,4 +9,4 @@ pub mod channel;
 pub mod transport;
 
 #[cfg(feature = "ffi")]
-pub mod sys_socket;
+pub mod api_ffi;
