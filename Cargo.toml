@@ -18,9 +18,10 @@ sodiumoxide = "*"
 cbindgen = "*"
 
 [features]
-default = [ "ffi" ]
+default = [ "ffi", "trans_tcp" ]
 
 ffi = []
+trans_tcp = []
 
 [profile.release]
 # For these check https://github.com/johnthagen/min-sized-rust

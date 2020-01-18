@@ -1,5 +1,13 @@
-mod tcp;
-pub use self::tcp::*;
+macro_rules! enable_transport {
+    ($trans: ident) => {
+        mod $trans;
+        pub use self::$trans::*;
+    }
+}
+
+// Transport definition
+#[cfg(feature = "trans_tcp")]
+enable_transport!(tcp);
 
 // Easier result
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;

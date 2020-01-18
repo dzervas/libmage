@@ -5,7 +5,7 @@ use std::slice::{from_raw_parts, from_raw_parts_mut};
 use std::thread_local;
 
 use connection::Connection;
-use transport::{Connector, Listener, Tcp};
+use transport::*;
 
 // TODO: These should be cfg-ish. Friendlier config.
 const ADDRESS: &'static str = "127.0.0.1:4444";
