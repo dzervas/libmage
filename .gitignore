@@ -6,3 +6,4 @@ Cargo.lock
 example/*.bin
 example/mage.h
 .mage-test.tmp
+src/settings.rs

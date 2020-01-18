@@ -14,7 +14,10 @@ bufstream = "*"
 sodiumoxide = "*"
 
 [build-dependencies]
+base64 = "*"
 cbindgen = "*"
+heck = "*"
+url = "*"
 
 [features]
 default = [ "ffi", "trans_tcp" ]
