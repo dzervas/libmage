@@ -1,16 +1,14 @@
-use std::io;
-use std::io::{Read, Write, Error, ErrorKind, BufRead};
+use std::io::{Read, Write, Error, ErrorKind, BufRead, Result};
 use std::sync::mpsc::{Sender, Receiver, channel as ch};
 use std::collections::HashMap;
 use std::borrow::BorrowMut;
 
 use bufstream::BufStream;
 
+use super::error_str;
 use channel::Channel;
 use stream::Stream;
 use transport::ReadWrite;
-
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub struct Connection {
     pub id: u32,
@@ -79,7 +77,8 @@ impl Connection {
     fn channel_loop(&mut self) -> Result<()> {
         for (k, v) in self.read_all_channels().unwrap().iter() {
             for c in self.channels.get(k).unwrap() {
-                c.0.send(v.clone())?;
+                let r = c.0.send(v.clone());
+                if r.is_err() { return Err(error_str!("Unable to send message")); }
             }
         }
 
@@ -107,20 +106,11 @@ impl Connection {
 
 #[deprecated(since="0.1.0", note="Please use `read_all_channels` or `channel_loop` with `get_channel`")]
 impl Read for Connection {
-    fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
-        let dechunked = match self.read_all_channels() {
-            Ok(d) => d,
-            Err(e) => return Err(io::Error::new(ErrorKind::Other, e.to_string()))
-        };
+    fn read(&mut self, mut buf: &mut [u8]) -> Result<usize> {
+        let dechunked = self.read_all_channels()?;
 
-        let bytes = match dechunked.get(&0u8) {
-            Some(d) => d,
-            None => return Ok(0usize)
-        };
-
-        if bytes.len() > buf.len() {
-            return Err(Error::new(ErrorKind::WouldBlock, "Buffer is too small"))
-        }
+        // Dunno how to hit "None"
+        let bytes = dechunked.get(&0u8).unwrap();
 
         buf.write(bytes.as_slice())
     }
@@ -128,14 +118,11 @@ impl Read for Connection {
 
 #[deprecated(since="0.1.0", note="Please use `write_channel` or `channel_loop` with `get_channel`")]
 impl Write for Connection {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match self.write_channel(0, buf) {
-            Ok(d) => Ok(d),
-            Err(e) => Err(io::Error::new(ErrorKind::Other, e.to_string()))
-        }
+    fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        self.write_channel(0, buf)
     }
 
-    fn flush(&mut self) -> io::Result<()> {
+    fn flush(&mut self) -> Result<()> {
         self.rw.flush()
     }
 }

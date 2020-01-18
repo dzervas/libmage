@@ -1,21 +1,17 @@
-use super::{Listener, Result, Connector};
 use std::net::{TcpListener, TcpStream};
+use std::io::Result;
+
+use super::{Listener, Connector};
 
 pub type Tcp = TcpListener;
 
 impl Listener<TcpStream> for Tcp {
     fn listen(addr: &'static str) -> Result<Self> {
-        match TcpListener::bind(addr) {
-            Ok(d) => Ok(d),
-            Err(e) => Err(Box::new(e))
-        }
+        TcpListener::bind(addr)
     }
 
     fn accept(&self) -> Result<TcpStream> {
-        match (self as &TcpListener).accept() {
-            Ok(d) => Ok(d.0),
-            Err(e) => Err(Box::new(e))
-        }
+        Ok((self as &TcpListener).accept()?.0)
     }
 
 //    fn incoming(&self) -> dyn Iterator<Item=i32> {
@@ -25,10 +21,7 @@ impl Listener<TcpStream> for Tcp {
 
 impl Connector<TcpStream> for Tcp {
     fn connect(addr: &'static str) -> Result<TcpStream> {
-        match TcpStream::connect(addr) {
-            Ok(d) => Ok(d),
-            Err(e) => Err(Box::new(e))
-        }
+        TcpStream::connect(addr)
     }
 }
 

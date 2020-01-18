@@ -30,7 +30,7 @@ const LISTENER_REMOTE_KEY: &[u8] = &[171, 47, 202, 50, 137, 131, 34, 194, 8, 251
 // base. This is used to map the "fd" (thinks the program) to our internal connection
 // & listening vector.
 const BASE_SOCKET_FD: c_int = 1000;
-const BASE_ACCEPT_FD: c_int = BASE_SOCKET_FD + 1000;
+const BASE_ACCEPT_FD: c_int = BASE_SOCKET_FD + 100;
 
 thread_local! {
     static SOCKET: RefCell<Vec<Connection>> = RefCell::new(Vec::new());
@@ -146,27 +146,41 @@ mod tests {
 
     #[cfg_attr(tarpaulin, skip)]
     fn listening() {
+        let mut index = 0;
         let listener = ffi_listen(0, 0);
-        let sock = ffi_accept(listener, null(), null_mut());
 
-        let mut data = [4; 1000];
+        loop {
+            let sock = ffi_accept(listener, null(), null_mut());
 
-        test_recv(sock, &mut data);
-        test_send(sock, data.to_vec());
+            if sock == -1 { break } else {
+                assert!(index < (BASE_ACCEPT_FD - BASE_SOCKET_FD), "Too many fake file descriptors! Something went wrong...");
+                index += 1;
+            }
 
-        assert_eq!(data.to_vec(), vec![1; 1000]);
+            let mut data = [4; 1000];
+
+            test_recv(sock, &mut data);
+            test_send(sock, data.to_vec());
+
+            assert_eq!(data.to_vec(), vec![1; 1000]);
+        }
     }
 
     fn connecting() {
-        sleep(Duration::from_millis(100));
-        let sock = ffi_connect(0, null(), null_mut());
+        sleep(Duration::from_millis(50));
 
-        let mut data = [1; 1000];
+        loop {
+            let sock = ffi_connect(0, null(), null_mut());
 
-        test_send(sock, data.to_vec());
-        test_recv(sock, &mut data);
+            if sock == -1 { break }
 
-        assert_eq!(data.to_vec(), vec![1; 1000]);
+            let mut data = [1; 1000];
+
+            test_send(sock, data.to_vec());
+            test_recv(sock, &mut data);
+
+            assert_eq!(data.to_vec(), vec![1; 1000]);
+        }
     }
 
     #[cfg_attr(tarpaulin, skip)]

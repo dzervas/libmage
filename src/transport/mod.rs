@@ -1,3 +1,5 @@
+use std::io::Result;
+
 macro_rules! enable_transport {
     ($trans: ident) => {
         mod $trans;
@@ -8,9 +10,6 @@ macro_rules! enable_transport {
 // Transport definition
 #[cfg(feature = "trans_tcp")]
 enable_transport!(tcp);
-
-// Easier result
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 // A trait for bidirectional communication
 use std::io::{Read, Write};

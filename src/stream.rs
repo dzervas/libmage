@@ -1,23 +1,9 @@
+use std::io::{Error, ErrorKind, Result};
+
+use super::error_str;
 use packet::{Packet, PacketConfig};
 
-use custom_error::custom_error;
 use sodiumoxide::crypto::{kx, secretstream};
-
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-custom_error!{StreamError
-    BadClientSignature = "Client Signature is bad (too small/too big?)",
-    BadServerSignature = "Server Signature is bad (too small/too big?)",
-
-    PacketSerializationError = "Could not serialize packet",
-    PacketConfigDiffersError = "Local and remote packet configurations differ",
-
-    EncryptionError = "Could not encrypt packet",
-    DecryptionError = "Could not decrypt packet",
-
-    DecryptionInitializationError = "Could not initialize the decryption stream (received header too small?)",
-    SeedError = "Unable to initialize keys from seed. Is the seed 32 bytes?",
-    RemoteKeyError = "Unable to remote key. Is the key 32 bytes?",
-}
 
 #[derive(PartialEq)]
 enum State {
@@ -44,13 +30,13 @@ impl Stream {
         // Remote "certificate" (public key) - can't recover from this...
         let remote_pkey = match kx::PublicKey::from_slice(remote_key) {
             Some(d) => d,
-            None => return Err(Box::new(StreamError::RemoteKeyError))
+            None => return Err(error_str!("Unable to remote key. Is the key 32 bytes?"))
         };
 
         // Actual keypair from seed - can't recover from this...
         let keys = kx::keypair_from_seed(&match kx::Seed::from_slice(seed) {
             Some(d) => d,
-            None => return Err(Box::new(StreamError::SeedError))
+            None => return Err(error_str!("Unable to initialize keys from seed. Is the seed 32 bytes?"))
         });
 
         let mut _pull_bytes = [0u8; secretstream::KEYBYTES];
@@ -75,12 +61,8 @@ impl Stream {
         let puller = secretstream::Stream::init_pull(&header, &pull_key).unwrap();
 
         Ok(Stream {
-            packet_config: PacketConfig {
-                has_id: true,
-                has_sequence: true,
-                has_data_len: true,
-                max_size: 256 - secretstream::ABYTES,
-            },
+            // Tarpaulin has a bug and wants the whole struct in 1 line
+            packet_config: PacketConfig { has_id: true, has_sequence: true, has_data_len: true, max_size: 256 - secretstream::ABYTES, },
             enc_stream: pusher,
             dec_stream: puller,
             state: State::Uninitialized,
@@ -111,10 +93,8 @@ impl Stream {
             written += w;
             i += 1;
 
-            let cipher = match self.enc_stream.push(&plain.as_slice(), None, secretstream::Tag::Message) {
-                Ok(d) => d,
-                Err(_) => return Err(Box::new(StreamError::EncryptionError))
-            };
+            // I can't find any case where encrypt fails
+            let cipher = self.enc_stream.push(&plain.as_slice(), None, secretstream::Tag::Message).unwrap();
             println!("Chunked {}: {:?}", cipher.len(), &cipher);
             chunks.push(cipher);
 
@@ -131,14 +111,12 @@ impl Stream {
         if self.state != State::Done && self.state != State::RecvHeader {
             // Parse the header and init the decryption stream
             if chunks.len() < secretstream::HEADERBYTES {
-                return Err(Box::new(StreamError::DecryptionInitializationError))
+                return Err(error_str!("Could not initialize the decryption stream (received header too small?)"))
             }
 
             let header = secretstream::Header::from_slice(&chunks[..secretstream::HEADERBYTES]).unwrap();
-            self.dec_stream = match secretstream::Stream::init_pull(&header, &self.dec_key) {
-                Ok(d) => d,
-                Err(_) => return Err(Box::new(StreamError::DecryptionInitializationError))
-            };
+            // I can't find any case where decryption init fails
+            self.dec_stream = secretstream::Stream::init_pull(&header, &self.dec_key).unwrap();
 
             chunks = &chunks[secretstream::HEADERBYTES..];
 
@@ -160,7 +138,7 @@ impl Stream {
             // Do something with the tag?
             let (plain, _tag) = match self.dec_stream.pull(&chunks[read..max_size], None) {
                 Ok(d) => d,
-                Err(_) => return Err(Box::new(StreamError::DecryptionError))
+                Err(_) => return Err(error_str!("Could not decrypt packet"))
             };
 
             let (pack, _pc, r) = PacketConfig::deserialize(plain.as_slice());
