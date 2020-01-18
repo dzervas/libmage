@@ -32,41 +32,6 @@ pub trait Connector<T: ReadWrite>: Sized + Send {
 pub trait Transport<RW: ReadWrite>: Listener<RW> + Connector<RW> {}
 impl<T: Listener<RW> + Connector<RW> + Sized + Send, RW: ReadWrite> Transport<RW> for T {}
 
-
-// Buffered bidirectional communication
-//pub struct BufReadWriter<T: ReadWrite> {
-//    pub reader: BufReader<T>,
-//    pub writer: BufWriter<T>,
-//}
-//
-//impl BufReadWriter<dyn ReadWrite> {
-//    // TO/DO: Is this Box required? Doesn't it just eat up memory?
-//    pub fn new(mut rw: Box<dyn ReadWrite>) -> Self {
-//        let raw_rw = rw.deref_mut();
-//
-//        Self {
-//            reader: BufReader::new(Box::new(raw_rw)),
-//            writer: BufWriter::new(Box::new(raw_rw))
-//        }
-//    }
-//}
-//
-//impl Read for BufReadWriter<dyn ReadWrite> {
-//    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-//        self.reader.read(buf)
-//    }
-//}
-//
-//impl Write for BufReadWriter<dyn ReadWrite> {
-//    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-//        self.writer.write(buf)
-//    }
-//
-//    fn flush(&mut self) -> std::io::Result<()> {
-//        self.writer.flush()
-//    }
-//}
-
 #[cfg(test)]
 mod tests {
     use super::*;

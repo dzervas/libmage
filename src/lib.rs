@@ -1,3 +1,4 @@
+extern crate bufstream;
 extern crate custom_error;
 extern crate sodiumoxide;
 

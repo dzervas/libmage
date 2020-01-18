@@ -41,21 +41,10 @@ thread_local! {
 
 #[no_mangle]
 pub extern fn ffi_connect(_socket: c_int, _sockaddr: *const c_void, _address_len: *mut c_void) -> c_int {
-    eprintln!("Connecting");
     let new_conn = CONNECTOR::connect(ADDRESS).unwrap();
-    let new_socket = Connection::new(0, Box::new(new_conn), false, CONNECTOR_SEED_KEY, CONNECTOR_REMOTE_KEY).unwrap();
+    let conn = Connection::new(0, Box::new(new_conn), false, CONNECTOR_SEED_KEY, CONNECTOR_REMOTE_KEY).unwrap();
 
-    SOCKET.with(move |mutex| {
-        let mut s = mutex.borrow_mut();
-
-        if BASE_SOCKET_FD + s.len() as c_int >= BASE_ACCEPT_FD {
-            return -1 // Maybe we should cycle? -1 is erroneous state and programs know it
-        }
-
-        s.push(new_socket);
-
-        BASE_SOCKET_FD + s.len() as c_int - 1  // len() is +1
-    })
+    new_socket(conn)
 }
 
 #[no_mangle]
@@ -82,11 +71,7 @@ pub extern fn ffi_recv(socket: c_int, msg: *mut c_void, size: usize, _flags: c_i
         let mut s = mutex.borrow_mut();
 
         let sock = s.get_mut((socket - BASE_SOCKET_FD) as usize).unwrap();
-        let r = sock.read(buf).unwrap() as isize;
-
-        println!("Received: [{}]{:?}", r, buf);
-
-        r
+        sock.read(buf).unwrap() as isize
     })
 }
 
@@ -110,13 +95,16 @@ pub extern fn ffi_accept(socket: c_int, _sockaddr: *const c_void, _address_len: 
     let accepted = ACCEPT.with(|mutex| {
         let a = mutex.borrow_mut();
 
-        println!("Waiting...");
         a.get((socket - BASE_ACCEPT_FD) as usize).unwrap().accept().unwrap().0
     });
 
     // TODO: Here we assume that listen is server and connect is client - not true. Must be configurable
-    let new_socket = Connection::new(0, Box::new(accepted), true, LISTENER_SEED_KEY, LISTENER_REMOTE_KEY).unwrap();
+    let conn = Connection::new(0, Box::new(accepted), true, LISTENER_SEED_KEY, LISTENER_REMOTE_KEY).unwrap();
 
+    new_socket(conn)
+}
+
+fn new_socket(conn: Connection) -> c_int {
     SOCKET.with(move |mutex| {
         let mut s = mutex.borrow_mut();
 
@@ -124,7 +112,7 @@ pub extern fn ffi_accept(socket: c_int, _sockaddr: *const c_void, _address_len: 
             return -1 // Maybe we should cycle? -1 is erroneous state and programs know it
         }
 
-        s.push(new_socket);
+        s.push(conn);
 
         println!("New socket: {}", BASE_SOCKET_FD + s.len() as c_int - 1);
 
@@ -146,7 +134,7 @@ mod tests {
     // accept() should already be running - but that blocks, so the thread is
     // locked and connect() can't run till accept() is done (which needs a connect()) etc.
     // Chicken & egg :)
-//    #[test]
+    #[test]
     fn test_listen_connect() {
         let thread = spawn(|| {
             listening()
@@ -161,29 +149,28 @@ mod tests {
         let listener = ffi_listen(0, 0);
         let sock = ffi_accept(listener, null(), null_mut());
 
-        let mut data = [4; 10];
+        let mut data = [4; 1000];
 
         test_recv(sock, &mut data);
         test_send(sock, data.to_vec());
 
-        assert_eq!(data, [1; 10]);
+        assert_eq!(data.to_vec(), vec![1; 1000]);
     }
 
     fn connecting() {
         sleep(Duration::from_millis(100));
         let sock = ffi_connect(0, null(), null_mut());
 
-        let mut data = [1; 10];
+        let mut data = [1; 1000];
 
         test_send(sock, data.to_vec());
         test_recv(sock, &mut data);
 
-        assert_eq!(data, [4; 10]);
+        assert_eq!(data.to_vec(), vec![1; 1000]);
     }
 
     #[cfg_attr(tarpaulin, skip)]
     fn test_send(sock: c_int, data: Vec<u8>) -> isize {
-        println!("Send");
         let med_buf = data.as_ptr();
         let buf = med_buf as *const _;
 
@@ -192,7 +179,6 @@ mod tests {
 
     #[cfg_attr(tarpaulin, skip)]
     fn test_recv(sock: c_int, data: &mut [u8]) -> isize {
-        println!("Recv");
         let buf = data.as_mut_ptr() as *mut _;
 
         ffi_recv(sock, buf, data.len(), 0)
