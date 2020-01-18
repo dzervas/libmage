@@ -11,13 +11,11 @@ path = "src/lib.rs"
 [dependencies]
 custom_error = "*"
 sodiumoxide = "*"
-lazy_static = "*"
-libc = "*"
+
+[build-dependencies]
+cbindgen = "*"
 
 [features]
 default = [ "ffi" ]
 
 ffi = []
-
-[build-dependencies]
-cbindgen = "*"

@@ -1,9 +1,8 @@
 use std::io::{Read, Write};
 use std::os::raw::{c_void, c_int};
+use std::cell::RefCell;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
-use std::sync::Mutex;
-
-use lazy_static::lazy_static;
+use std::thread_local;
 
 use connection::Connection;
 use transport::{Connector, Listener, Tcp};
@@ -33,9 +32,9 @@ const LISTENER_REMOTE_KEY: &[u8] = &[171, 47, 202, 50, 137, 131, 34, 194, 8, 251
 const BASE_SOCKET_FD: c_int = 1000;
 const BASE_ACCEPT_FD: c_int = BASE_SOCKET_FD + 1000;
 
-lazy_static! {
-    static ref SOCKET: Mutex<Vec<Connection>> = Mutex::new(Vec::new());
-    static ref ACCEPT: Mutex<Vec<LISTENER>> = Mutex::new(Vec::new());
+thread_local! {
+    static SOCKET: RefCell<Vec<Connection>> = RefCell::new(Vec::new());
+    static ACCEPT: RefCell<Vec<LISTENER>> = RefCell::new(Vec::new());
 }
 
 // TODO: Handle all panics - not supported by FFI, undefined behaviour
@@ -44,16 +43,19 @@ lazy_static! {
 pub extern fn ffi_connect(_socket: c_int, _sockaddr: *const c_void, _address_len: *mut c_void) -> c_int {
     eprintln!("Connecting");
     let new_conn = CONNECTOR::connect(ADDRESS).unwrap();
-
-    let mut socket_mut = SOCKET.lock().unwrap();
-    if BASE_SOCKET_FD + socket_mut.len() as c_int >= BASE_ACCEPT_FD {
-        return -1 // Maybe we should cycle? -1 is erroneous state and programs know it
-    }
     let new_socket = Connection::new(0, Box::new(new_conn), false, CONNECTOR_SEED_KEY, CONNECTOR_REMOTE_KEY).unwrap();
 
-    socket_mut.push(new_socket);
+    SOCKET.with(move |mutex| {
+        let mut s = mutex.borrow_mut();
 
-    BASE_SOCKET_FD + socket_mut.len() as c_int - 1  // len() is +1
+        if BASE_SOCKET_FD + s.len() as c_int >= BASE_ACCEPT_FD {
+            return -1 // Maybe we should cycle? -1 is erroneous state and programs know it
+        }
+
+        s.push(new_socket);
+
+        BASE_SOCKET_FD + s.len() as c_int - 1  // len() is +1
+    })
 }
 
 #[no_mangle]
@@ -63,52 +65,71 @@ pub extern fn ffi_send(socket: c_int, msg: *const c_void, size: usize, _flags: c
     let buf = unsafe { from_raw_parts(msg as *const u8, size) };
     println!("-> {:?}", buf);
 
-    // TODO: Get rid of all those unwraps maybe? Maybe try to recover?
-    let mut socket_mut = SOCKET.lock().unwrap();
-    let sock = socket_mut.get_mut((socket - BASE_SOCKET_FD) as usize).unwrap();
-    sock.write(buf).unwrap() as isize
+    SOCKET.with(|mutex| {
+        let mut s = mutex.borrow_mut();
+
+        // TODO: Get rid of all those unwraps maybe? Maybe try to recover?
+        let sock = s.get_mut((socket - BASE_SOCKET_FD) as usize).unwrap();
+        sock.write(buf).unwrap() as isize
+    })
 }
 
 #[no_mangle]
 pub extern fn ffi_recv(socket: c_int, msg: *mut c_void, size: usize, _flags: c_int) -> isize {
     let buf = unsafe { from_raw_parts_mut(msg as *mut u8, size) };
 
-    let mut socket_mut = SOCKET.lock().unwrap();
-    let sock = socket_mut.get_mut((socket - BASE_SOCKET_FD) as usize).unwrap();
-    sock.read(buf).unwrap() as isize
+    SOCKET.with(|mutex| {
+        let mut s = mutex.borrow_mut();
+
+        let sock = s.get_mut((socket - BASE_SOCKET_FD) as usize).unwrap();
+        let r = sock.read(buf).unwrap() as isize;
+
+        println!("Received: [{}]{:?}", r, buf);
+
+        r
+    })
 }
 
 #[no_mangle]
 pub extern fn ffi_listen(_socket: c_int, _backlog: c_int) -> c_int {
     let new_accept = LISTENER::listen(ADDRESS).unwrap();
 
-    let mut accept_mut = ACCEPT.lock().unwrap();
-    accept_mut.push(new_accept);
+    ACCEPT.with(move |mutex| {
+        let mut a = mutex.borrow_mut();
 
-    println!("New listener: {}", BASE_ACCEPT_FD + accept_mut.len() as c_int - 1);
+        a.push(new_accept);
 
-    BASE_ACCEPT_FD + accept_mut.len() as c_int - 1  // len() is +1
+        println!("New listener: {}", BASE_ACCEPT_FD + a.len() as c_int - 1);
+
+        BASE_ACCEPT_FD + a.len() as c_int - 1  // len() is +1
+    })
 }
 
 #[no_mangle]
 pub extern fn ffi_accept(socket: c_int, _sockaddr: *const c_void, _address_len: *mut c_void) -> c_int {
-    let accept_imm = ACCEPT.lock().unwrap();
-    println!("Waiting...");
-    let accepted = accept_imm.get((socket - BASE_ACCEPT_FD) as usize).unwrap().accept().unwrap().0;
-    drop(accept_imm);
-    println!("Unlocked");
+    let accepted = ACCEPT.with(|mutex| {
+        let a = mutex.borrow_mut();
 
-    let mut socket_mut = SOCKET.lock().unwrap();
-    if BASE_SOCKET_FD + socket_mut.len() as c_int >= BASE_ACCEPT_FD {
-        return -1 // Maybe we should cycle? -1 is erroneous state and programs know it
-    }
+        println!("Waiting...");
+        a.get((socket - BASE_ACCEPT_FD) as usize).unwrap().accept().unwrap().0
+    });
 
     // TODO: Here we assume that listen is server and connect is client - not true. Must be configurable
     let new_socket = Connection::new(0, Box::new(accepted), true, LISTENER_SEED_KEY, LISTENER_REMOTE_KEY).unwrap();
 
-    socket_mut.push(new_socket);
+    SOCKET.with(move |mutex| {
+        let mut s = mutex.borrow_mut();
 
-    BASE_SOCKET_FD + socket_mut.len() as c_int - 1  // len() is +1
+        if BASE_SOCKET_FD + s.len() as c_int >= BASE_ACCEPT_FD {
+            return -1 // Maybe we should cycle? -1 is erroneous state and programs know it
+        }
+
+        s.push(new_socket);
+
+        println!("New socket: {}", BASE_SOCKET_FD + s.len() as c_int - 1);
+
+        BASE_SOCKET_FD + s.len() as c_int - 1  // len() is +1
+    })
 }
 
 #[cfg(test)]
@@ -126,20 +147,29 @@ mod tests {
     // locked and connect() can't run till accept() is done (which needs a connect()) etc.
     // Chicken & egg :)
 //    #[test]
-    #[cfg_attr(tarpaulin, skip)]
-    fn listening() {
-        let thread = spawn(move || {
-            let listener = ffi_listen(0, 0);
-            let sock = ffi_accept(listener, null(), null_mut());
-
-            let mut data = [4; 10];
-
-            test_recv(sock, &mut data);
-            test_send(sock, data.to_vec());
-
-            assert_eq!(data, [1; 10]);
+    fn test_listen_connect() {
+        let thread = spawn(|| {
+            listening()
         });
 
+        connecting();
+        assert!(thread.join().is_ok(), "Thread panicked!");
+    }
+
+    #[cfg_attr(tarpaulin, skip)]
+    fn listening() {
+        let listener = ffi_listen(0, 0);
+        let sock = ffi_accept(listener, null(), null_mut());
+
+        let mut data = [4; 10];
+
+        test_recv(sock, &mut data);
+        test_send(sock, data.to_vec());
+
+        assert_eq!(data, [1; 10]);
+    }
+
+    fn connecting() {
         sleep(Duration::from_millis(100));
         let sock = ffi_connect(0, null(), null_mut());
 
@@ -149,8 +179,6 @@ mod tests {
         test_recv(sock, &mut data);
 
         assert_eq!(data, [4; 10]);
-
-        thread.join().unwrap();
     }
 
     #[cfg_attr(tarpaulin, skip)]
