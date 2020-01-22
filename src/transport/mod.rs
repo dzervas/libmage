@@ -40,7 +40,7 @@ pub trait Transport<RW: ReadWrite>: Listener<RW> + Connector<RW> {}
 impl<T: Listener<RW> + Connector<RW> + Sized + Send, RW: ReadWrite> Transport<RW> for T {}
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use std::thread::{spawn, sleep};
     use std::time::Duration;
@@ -91,7 +91,7 @@ mod tests {
     #[macro_export]
     macro_rules! test_transport {
         ($name:ident, $t:ty, $rw:ty) => {
-            use transport::tests::test_listen_conn_inner;
+            use crate::transport::tests::test_listen_conn_inner;
 
             #[test]
             fn $name() {

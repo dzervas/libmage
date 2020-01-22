@@ -28,7 +28,10 @@ impl Connector<TcpStream> for Tcp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ::test_transport;
+    // This happens due to #[macro_export]
+    // Compiler said: a macro annotated with `#[macro_export]` will be exported
+    // at the root of the crate instead of the module where it is defined
+    use crate::test_transport;
 
     test_transport!(test_transport_tcp, Tcp, TcpStream);
 }
