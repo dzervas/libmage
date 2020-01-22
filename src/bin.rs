@@ -30,6 +30,10 @@ enum Command {
         #[structopt(short = "a", long = "ascii")]
         armor: bool,
 
+        /// Give seed as a base64 string (NOT SAFE)
+        #[structopt(short = "s", long = "seed")]
+        seed: Option<String>,
+
         /// Input seed file
         #[structopt(short = "i", long = "input")]
         input: Option<PathBuf>,
@@ -51,13 +55,15 @@ fn main() {
     let opts: Opts = Opts::from_args();
 
     match opts.cmds {
-        Command::Key { gen, armor, input, output } => {
+        Command::Key { gen, armor, seed: seed_b64, input, output } => {
             let mut seed: Vec<u8>;
 
             if gen {
                 seed = key::generate_seed();
             } else if input.is_some() {
                 seed = key::seed_from_file(input.unwrap()).unwrap();
+            } else if seed_b64.is_some() {
+                seed = base64::decode(seed_b64.unwrap().as_bytes()).unwrap();
             } else {
                 eprintln!("Either pass --gen to generate seed or give --input <seed_file>");
                 return;
