@@ -2,16 +2,26 @@
 name = "mage"
 version = "0.1.0"
 authors = ["Dimitris Zervas <dzervas@dzervas.gr>"]
+edition = "2018"
 
 [lib]
 name = "mage"
-crate-type = ["lib", "cdylib", "staticlib"]
 path = "src/lib.rs"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "mage"
+path = "src/bin.rs"
+required-features = ["tool"]
 
 [dependencies]
 #std = {default-features=false, features=["panic_immediate_abort"]}
 bufstream = "*"
 sodiumoxide = "*"
+
+# Binary dependencies
+structopt = { version = "*", optional = true }
+base64 = { version = "*", optional = true }
 
 [build-dependencies]
 base64 = "*"
@@ -20,12 +30,16 @@ heck = "*"
 url = "*"
 
 [features]
-default = [ "ffi", "trans_tcp" ]
+default = ["ffi", "trans_tcp"]
 
+tool = ["structopt", "base64"]
 ffi = []
+
+# Transports
 trans_tcp = []
 
 [profile.release]
 # For these check https://github.com/johnthagen/min-sized-rust
 lto = true
 codegen-units = 1
+panic = "abort"

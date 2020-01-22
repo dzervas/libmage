@@ -6,9 +6,9 @@ use std::borrow::BorrowMut;
 use bufstream::BufStream;
 
 use super::error_str;
-use channel::Channel;
-use stream::Stream;
-use transport::ReadWrite;
+use crate::channel::Channel;
+use crate::stream::Stream;
+use crate::transport::ReadWrite;
 
 pub struct Connection {
     pub id: u32,

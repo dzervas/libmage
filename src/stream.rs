@@ -1,7 +1,7 @@
 use std::io::{Error, ErrorKind, Result};
 
 use super::error_str;
-use packet::{Packet, PacketConfig};
+use crate::packet::{Packet, PacketConfig};
 
 use sodiumoxide::crypto::{kx, secretstream};
 
