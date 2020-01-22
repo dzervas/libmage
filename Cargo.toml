@@ -20,8 +20,10 @@ bufstream = "*"
 sodiumoxide = "*"
 
 # Binary dependencies
-structopt = { version = "*", optional = true }
 base64 = { version = "*", optional = true }
+heck = { version = "*", optional = true }
+structopt = { version = "*", optional = true }
+url = { version = "*", optional = true }
 
 [build-dependencies]
 base64 = "*"
@@ -32,7 +34,7 @@ url = "*"
 [features]
 default = ["ffi", "trans_tcp"]
 
-tool = ["structopt", "base64"]
+tool = ["base64", "heck", "structopt", "url"]
 ffi = []
 
 # Transports
