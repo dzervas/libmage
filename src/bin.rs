@@ -52,7 +52,7 @@ fn main() {
 
     match opts.cmds {
         Command::Key { gen, armor, input, output } => {
-            let seed: Vec<u8>;
+            let mut seed: Vec<u8>;
 
             if gen {
                 seed = key::generate_seed();
@@ -63,18 +63,21 @@ fn main() {
                 return;
             }
 
-            let public_key = key::get_public_key(seed.clone());
+            let mut public_key = key::get_public_key(seed.clone());
 
-//            if armor {
-//                let seed_armor = base64::encode(seed.as_slice());
-//                let public_key_armor = base64::encode(public_key.as_slice());
-//            }
+            if armor {
+                seed = base64::encode(seed.as_slice()).into_bytes();
+                public_key = base64::encode(public_key.as_slice()).into_bytes();
+            }
 
             match output {
                 Some(d) => key::write_to_file(seed, public_key, d).unwrap(),
                 None => {
-                    println!("Seed: {:?}", seed);
-                    println!("Public Key: {:?}", public_key);
+                    if armor {
+                        let seed_str = String::from_utf8(seed).unwrap();
+                        let public_key_str = String::from_utf8(public_key).unwrap();
+                        println!("Keypair Seed:\t{}\nPublic Key:\t{}", seed_str, public_key_str)
+                    } else { println!("Keypair Seed:\t{:?}\nPublic Key:\t{:?}", seed, public_key) }
                 }
             }
         }
