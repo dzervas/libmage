@@ -1,17 +1,17 @@
-use std::net::{TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::io::Result;
 
-use super::{Listener, Connector};
+use super::{Listener, Connector, ReadWrite};
 
-pub type Tcp = TcpListener;
+pub struct Tcp(TcpListener);
 
-impl Listener<TcpStream> for Tcp {
-    fn listen(addr: &'static str) -> Result<Self> {
-        TcpListener::bind(addr)
+impl Listener for Tcp {
+    fn listen<A: ToSocketAddrs>(addr: A) -> Result<Self> {
+        Ok(Self(TcpListener::bind(addr)?))
     }
 
-    fn accept(&self) -> Result<TcpStream> {
-        Ok((self as &TcpListener).accept()?.0)
+    fn accept(&self) -> Result<Box<dyn ReadWrite>> {
+        Ok(Box::new(self.0.accept()?.0))
     }
 
 //    fn incoming(&self) -> dyn Iterator<Item=i32> {
@@ -19,9 +19,9 @@ impl Listener<TcpStream> for Tcp {
 //    }
 }
 
-impl Connector<TcpStream> for Tcp {
-    fn connect(addr: &'static str) -> Result<TcpStream> {
-        TcpStream::connect(addr)
+impl Connector for Tcp {
+    fn connect<A: ToSocketAddrs>(addr: A) -> Result<Box<dyn ReadWrite>> {
+        Ok(Box::new(TcpStream::connect(addr)?))
     }
 }
 
@@ -33,5 +33,5 @@ mod tests {
     // at the root of the crate instead of the module where it is defined
     use crate::test_transport;
 
-    test_transport!(test_transport_tcp, Tcp, TcpStream);
+    test_transport!(test_transport_tcp, Tcp);
 }

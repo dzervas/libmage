@@ -5,7 +5,7 @@ use std::borrow::BorrowMut;
 
 use bufstream::BufStream;
 
-use super::error_str;
+use crate::error_str;
 use crate::channel::Channel;
 use crate::stream::Stream;
 use crate::transport::ReadWrite;
@@ -60,8 +60,7 @@ impl Connection {
         Ok(result)
     }
 
-    #[allow(dead_code)]
-    fn get_channel(&mut self, channel: u8) -> Channel {
+    pub fn get_channel(&mut self, channel: u8) -> Channel {
         let (from_ch, to_conn) = ch();
         let (from_conn, to_ch) = ch();
         self.channels.entry(channel).or_insert(Vec::new()).push((from_conn, to_conn));
@@ -73,8 +72,7 @@ impl Connection {
         }
     }
 
-    #[allow(dead_code)]
-    fn channel_loop(&mut self) -> Result<()> {
+    pub fn channel_loop(&mut self) -> Result<()> {
         for (k, v) in self.read_all_channels().unwrap().iter() {
             for c in self.channels.get(k).unwrap() {
                 let r = c.0.send(v.clone());

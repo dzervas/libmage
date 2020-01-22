@@ -113,12 +113,12 @@ pub extern fn ffi_accept(socket: c_int, _sockaddr: *const c_void, _address_len: 
     let accepted = ACCEPT.with(|mutex| {
         let a = mutex.borrow_mut();
 
-        a.get((socket - BASE_ACCEPT_FD) as usize).unwrap().accept().unwrap().0
+        a.get((socket - BASE_ACCEPT_FD) as usize).unwrap().accept().unwrap()
     });
 
     #[cfg(test)]
     const_test_listen!();
-    let conn = Connection::new(0, Box::new(accepted), LISTEN, SEED, REMOTE_KEY).unwrap();
+    let conn = Connection::new(0, accepted, LISTEN, SEED, REMOTE_KEY).unwrap();
 
     new_socket(conn)
 }

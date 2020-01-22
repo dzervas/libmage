@@ -13,6 +13,8 @@ enable_transport!(tcp);
 
 // A trait for bidirectional communication
 use std::io::{Read, Write};
+use std::net::ToSocketAddrs;
+
 pub trait ReadWrite: Read + Write + Sync + Send {}
 impl<T: ?Sized + Read + Write + Sync + Send> ReadWrite for T {}
 
@@ -24,20 +26,20 @@ impl<T: ?Sized + Read + Write + Sync + Send> ReadWrite for T {}
 // Client: pwned machine
 // Server: attacker's machine
 // Who listens and who connects is irrelevant
-pub trait Listener<T: ReadWrite>: Sized + Send {
-    fn listen(addr: &'static str) -> Result<Self>;
+pub trait Listener: Sized + Send {
+    fn listen<A: ToSocketAddrs>(addr: A) -> Result<Self>;
     // TODO: Add some kind of address struct?
-    fn accept(&self) -> Result<T>;
+    fn accept(&self) -> Result<Box<dyn ReadWrite>>;
     // TODO: Make the damn iterator work
 //    fn incoming(&self) -> dyn Iterator<Item=i32>;
 }
 
-pub trait Connector<T: ReadWrite>: Sized + Send {
-    fn connect(addr: &'static str) -> Result<T>;
+pub trait Connector: Sized + Send {
+    fn connect<A: ToSocketAddrs>(addr: A) -> Result<Box<dyn ReadWrite>>;
 }
 
-pub trait Transport<RW: ReadWrite>: Listener<RW> + Connector<RW> {}
-impl<T: Listener<RW> + Connector<RW> + Sized + Send, RW: ReadWrite> Transport<RW> for T {}
+pub trait Transport: Listener + Connector {}
+impl<T: Listener + Connector + Sized + Send> Transport for T {}
 
 #[cfg(test)]
 pub mod tests {
@@ -58,7 +60,7 @@ pub mod tests {
 
     // Test listen, accept, connect
     #[cfg_attr(tarpaulin, skip)]
-    pub fn test_listen_conn_inner<T: Transport<RW>, RW: ReadWrite>(succ: bool, addr: &'static str, c2l: Vec<u8>, mut l2c: Vec<u8>) {
+    pub fn test_listen_conn_inner<T: Transport>(succ: bool, addr: &'static str, c2l: Vec<u8>, mut l2c: Vec<u8>) {
         let mut c2l_clone = c2l.clone();
         let l2c_clone = l2c.clone();
 
@@ -90,17 +92,17 @@ pub mod tests {
     // Transport Tests
     #[macro_export]
     macro_rules! test_transport {
-        ($name:ident, $t:ty, $rw:ty) => {
+        ($name:ident, $t:ty) => {
             use crate::transport::tests::test_listen_conn_inner;
 
             #[test]
             fn $name() {
-                test_listen_conn_inner::<$t, $rw>(true, "127.0.0.1:13337", vec![1; 10], vec![4; 10]);
-                test_listen_conn_inner::<$t, $rw>(true, "127.0.0.1:13337", vec![1; 512], vec![4; 512]);
-                test_listen_conn_inner::<$t, $rw>(true, "127.0.0.1:13337", vec![1; 10000], vec![4; 10000]);
+                test_listen_conn_inner::<$t>(true, "127.0.0.1:13337", vec![1; 10], vec![4; 10]);
+                test_listen_conn_inner::<$t>(true, "127.0.0.1:13337", vec![1; 512], vec![4; 512]);
+                test_listen_conn_inner::<$t>(true, "127.0.0.1:13337", vec![1; 10000], vec![4; 10000]);
                 // These block (duh...)
-//                test_listen_conn_inner::<$t, $rw>(true, "127.0.0.1:13337", vec![], vec![4; 10]);
-//                test_listen_conn_inner::<$t, $rw>(true, "127.0.0.1:13337", vec![100; 10000], vec![]);
+//                test_listen_conn_inner::<$t>(true, "127.0.0.1:13337", vec![], vec![4; 10]);
+//                test_listen_conn_inner::<$t>(true, "127.0.0.1:13337", vec![100; 10000], vec![]);
             }
         }
     }
