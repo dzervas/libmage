@@ -21,7 +21,6 @@ sodiumoxide = "*"
 
 # Binary dependencies
 base64 = { version = "*", optional = true }
-heck = { version = "*", optional = true }
 structopt = { version = "*", optional = true }
 url = { version = "*", optional = true }
 
@@ -34,11 +33,12 @@ url = "*"
 [features]
 default = ["ffi", "trans_tcp"]
 
-tool = ["base64", "heck", "structopt", "url"]
+tool = ["base64", "trans_socks", "structopt", "url"]
 ffi = []
 
 # Transports
 trans_tcp = []
+trans_socks = ["trans_tcp"]
 
 [profile.release]
 # For these check https://github.com/johnthagen/min-sized-rust

@@ -95,6 +95,7 @@ impl Stream {
 
             // I can't find any case where encrypt fails
             let cipher = self.enc_stream.push(&plain.as_slice(), None, secretstream::Tag::Message).unwrap();
+            #[cfg(not(test))]
             println!("Chunked {}: {:?}", cipher.len(), &cipher);
             chunks.push(cipher);
 
@@ -133,6 +134,7 @@ impl Stream {
             let max_size = if chunks.len() > self.packet_config.max_size + read + secretstream::ABYTES {
                 read + self.packet_config.max_size + secretstream::ABYTES
             } else { chunks.len() };
+            #[cfg(not(test))]
             println!("Dechunking {}: {:?}", chunks[read..max_size].len(), &chunks[read..max_size]);
 
             // Do something with the tag?

@@ -70,7 +70,6 @@ pub extern fn ffi_send(socket: c_int, msg: *const c_void, size: usize, _flags: c
     // TODO: Use snappy compress https://doc.rust-lang.org/nomicon/ffi.html#creating-a-safe-interface to ensure safety of given buffers
     // TODO: Handle nulls
     let buf = unsafe { from_raw_parts(msg as *const u8, size) };
-    println!("-> {:?}", buf);
 
     SOCKET.with(|mutex| {
         let mut s = mutex.borrow_mut();
@@ -102,6 +101,7 @@ pub extern fn ffi_listen(_socket: c_int, _backlog: c_int) -> c_int {
 
         a.push(new_accept);
 
+        #[cfg(not(test))]
         println!("New listener: {}", BASE_ACCEPT_FD + a.len() as c_int - 1);
 
         BASE_ACCEPT_FD + a.len() as c_int - 1  // len() is +1
@@ -133,6 +133,7 @@ fn new_socket(conn: Connection) -> c_int {
 
         s.push(conn);
 
+        #[cfg(not(test))]
         println!("New socket: {}", BASE_SOCKET_FD + s.len() as c_int - 1);
 
         BASE_SOCKET_FD + s.len() as c_int - 1  // len() is +1
