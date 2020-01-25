@@ -1,15 +1,17 @@
 use std::io::Result;
 
 macro_rules! enable_transport {
-    ($trans: ident) => {
+    ($trans: ident, $feature: expr) => {
+        #[cfg(feature = $feature)]
         mod $trans;
+        #[cfg(feature = $feature)]
         pub use self::$trans::*;
     }
 }
 
 // Transport definition
-#[cfg(feature = "trans_tcp")]
-enable_transport!(tcp);
+enable_transport!(tcp, "trans_tcp");
+enable_transport!(socks, "trans_socks");
 
 // A trait for bidirectional communication
 use std::io::{Read, Write};

@@ -1,7 +1,7 @@
 use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::io::Result;
 
-use super::{Listener, Connector, ReadWrite};
+use super::{Connector, Listener, ReadWrite};
 
 pub struct Tcp(TcpListener);
 
@@ -13,10 +13,6 @@ impl Listener for Tcp {
     fn accept(&self) -> Result<Box<dyn ReadWrite>> {
         Ok(Box::new(self.0.accept()?.0))
     }
-
-//    fn incoming(&self) -> dyn Iterator<Item=i32> {
-//        unimplemented!()
-//    }
 }
 
 impl Connector for Tcp {
