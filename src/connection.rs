@@ -1,19 +1,26 @@
-use std::io::{Read, Write, Error, ErrorKind, BufRead, Result};
-use std::sync::mpsc::{Sender, Receiver, channel as ch};
+use std::io::{Read, Write, BufRead, Result};
 use std::collections::HashMap;
-use std::borrow::BorrowMut;
 
 use bufstream::BufStream;
 
-use crate::error_str;
-use crate::channel::Channel;
 use crate::stream::Stream;
 use crate::transport::ReadWrite;
+
+#[cfg(feature = "channels")]
+use {
+    std::borrow::BorrowMut,
+    std::io::{Error, ErrorKind},
+    std::sync::mpsc::{Sender, Receiver, channel as ch},
+
+    crate::error_str,
+    crate::channel::Channel,
+};
 
 pub struct Connection {
     pub id: u32,
     stream: Stream,
     rw: BufStream<Box<dyn ReadWrite>>,
+    #[cfg(feature = "channels")]
     channels: HashMap<u8, Vec<(Sender<Vec<u8>>, Receiver<Vec<u8>>)>>
 }
 
@@ -24,6 +31,7 @@ impl Connection {
                 id,
                 stream,
                 rw: BufStream::new(rw),
+                #[cfg(feature = "channels")]
                 channels: HashMap::new()
             }),
             Err(e) => Err(e)
@@ -60,6 +68,7 @@ impl Connection {
         Ok(result)
     }
 
+    #[cfg(feature = "channels")]
     pub fn get_channel(&mut self, channel: u8) -> Channel {
         let (from_ch, to_conn) = ch();
         let (from_conn, to_ch) = ch();
@@ -72,6 +81,7 @@ impl Connection {
         }
     }
 
+    #[cfg(feature = "channels")]
     pub fn channel_loop(&mut self) -> Result<()> {
         for (k, v) in self.read_all_channels().unwrap().iter() {
             for c in self.channels.get(k).unwrap() {
@@ -158,12 +168,8 @@ mod tests {
     }
 
     #[test]
-    fn read_write() {
-        let file = OpenOptions::new().read(true).write(true).create(true).open(TEST_FILE_PATH).unwrap();
-        let mut conn = Connection::new(0xFFFF, Box::new(file.try_clone().unwrap()), false, &[1; 32], &[252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6]).unwrap();
-
-        let file2 = OpenOptions::new().read(true).write(true).open(TEST_FILE_PATH).unwrap();
-        let mut conn2 = Connection::new(0xFFFF, Box::new(file2.try_clone().unwrap()), true, &[2; 32], &[171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111]).unwrap();
+    fn test_read_write() {
+        let (mut conn, mut conn2) = connection_prelude();
 
         test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[7; 100]);
         test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[7; 100]);
@@ -173,7 +179,13 @@ mod tests {
 //        test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[7; 100000]);
 //        test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[7; 100000]);
 
-        // Channels
+    }
+
+    #[test]
+    #[cfg(feature = "channels")]
+    fn test_channels() {
+        let (mut conn, mut conn2) = connection_prelude();
+
         let mut chan = conn.get_channel(4);
         let mut chan_other = conn.get_channel(0xF);
 
@@ -203,6 +215,17 @@ mod tests {
         }
 
         thread.join().unwrap();
+    }
+
+    #[cfg_attr(tarpaulin, skip)]
+    fn connection_prelude() -> (Connection, Connection) {
+        let file = OpenOptions::new().read(true).write(true).create(true).open(TEST_FILE_PATH).unwrap();
+        let conn = Connection::new(0xFFFF, Box::new(file.try_clone().unwrap()), false, &[1; 32], &[252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6]).unwrap();
+
+        let file2 = OpenOptions::new().read(true).write(true).open(TEST_FILE_PATH).unwrap();
+        let conn2 = Connection::new(0xFFFF, Box::new(file2.try_clone().unwrap()), true, &[2; 32], &[171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111]).unwrap();
+
+        (conn, conn2)
     }
 
     #[cfg_attr(tarpaulin, skip)]

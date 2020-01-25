@@ -21,6 +21,7 @@ sodiumoxide = "*"
 
 # Binary dependencies
 base64 = { version = "*", optional = true }
+may = { version = "*", optional = true }
 structopt = { version = "*", optional = true }
 url = { version = "*", optional = true }
 
@@ -33,7 +34,8 @@ url = "*"
 [features]
 default = ["ffi", "trans_tcp"]
 
-tool = ["base64", "trans_socks", "structopt", "url"]
+channels = []
+tool = ["base64", "may", "structopt", "url", "trans_socks"]
 ffi = []
 
 # Transports
