@@ -1,17 +1,18 @@
 extern crate base64;
+extern crate bufstream;
+#[macro_use]
+extern crate may;
 extern crate structopt;
 
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::thread::spawn;
 
-use mage::tool::{key, Address};
+use mage::tool::{proxy, key, Address};
 use mage::transport::*;
-//use mage::transport::{Connector, Listener, Tcp, ReadWrite};
 use mage::connection::Connection;
 
+use may::sync::mpsc::{Sender, Receiver, channel};
 use structopt::StructOpt;
+use std::io::Read;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "mage")]
@@ -67,7 +68,7 @@ enum Command {
 
         /// Proxy port to use
         #[structopt(short = "p", long = "port")]
-        proxy_port: String,
+        proxy_port: u16,
 
         /// Address of the proxy to listen/connect to
         /// Ex.: -lp 4444 127.0.0.1 on machine with the browser
@@ -117,58 +118,65 @@ fn main() {
         }
         Command::Proxy { address, public_key, proxy_listen, proxy_port, proxy_addr } => {
             let mage_addr = Address::parse(address);
-            let hostport = format!("{}:{}", mage_addr.host, mage_addr.port);
+            let host_port = format!("{}:{}", mage_addr.host, mage_addr.port);
 
             let remote_key = base64::decode(public_key.as_bytes()).unwrap();
 
             // TODO: This is temporary - select transport on runtime
             let conn = if mage_addr.listen {
-                let listener = Tcp::listen(hostport).unwrap();
-//                println!("Listening for mage connection at {} over Tcp", hostport);
+                let listener = Tcp::listen(host_port).unwrap();
+//                println!("Listening for mage connection at {} over Tcp", host_port);
                 listener.accept().unwrap()
             } else {
-//                println!("Mage connecting to {} over Tcp", hostport);
-                Tcp::connect(hostport).unwrap()
+//                println!("Mage connecting to {} over Tcp", host_port);
+                Tcp::connect(host_port).unwrap()
             };
 
             println!("Mage connection opened! Spawning communication thread");
             // While it's wrong to assume that if we listen we're server,
             // it's safe to assume and it's just about the proxy tool
-            let mut connection = Connection::new(0, Box::new(conn), mage_addr.listen, seed.as_slice(), remote_key.as_slice()).unwrap();
+            let mut connection = Box::new(Connection::new(0, Box::new(conn), mage_addr.listen, seed.as_slice(), remote_key.as_slice()).unwrap());
 
             let mut proxy_conn = if proxy_listen {
-                let listener = TcpListener::bind(format!("{}:{}", proxy_addr, proxy_port)).unwrap();
-                listener.accept().unwrap().0
+                let listener = Socks::listen((proxy_addr.as_str(), proxy_port)).unwrap();
+                listener.accept().unwrap()
             } else {
-                TcpStream::connect(format!("{}:{}", proxy_addr, proxy_port)).unwrap()
+                Socks::connect((proxy_addr.as_str(), proxy_port)).unwrap()
             };
 
-            let c2p = |mut connection: &mut Connection, mut proxy: &mut TcpStream| {
+            let ch = connection.get_channel(1);
+            let (tx, to_sock): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = channel();
+            let (from_sock, rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = channel();
+            let (conn_tx, conn_rx) = (ch.sender, ch.receiver);
+
+            go!(|| {proxy::bridge(tx, conn_rx, "a")});
+            go!(|| {proxy::bridge(conn_tx, rx, "b")});
+
+            go!(move || {
                 let mut buf = [0; 16];
+                println!("Starting proxy loop");
+                loop {
+                    let l = proxy_conn.read(&mut buf).unwrap();
+                    if l > 0 {
+                        from_sock.send(buf.to_vec());
+                    }
 
-                println!("Waiting for data...");
-                let siz = proxy.read(&mut buf).unwrap();
-                println!("Got");
-                let _ = connection.write(&buf[..siz]).unwrap();
-            };
-
-            let p2c = |mut proxy: &mut TcpStream, mut connection: &mut Connection| {
-                let mut buf = [0; 16];
-
-                println!("Waiting for chan data...");
-                let siz = connection.read(&mut buf).unwrap();
-                println!("Got chan");
-                let _ = proxy.write(&buf[..siz]).unwrap();
-            };
-
-            loop {
-                if proxy_listen {
-                    c2p(&mut connection, &mut proxy_conn);
-                    p2c(&mut proxy_conn, &mut connection);
-                } else {
-                    p2c(&mut proxy_conn, &mut connection);
-                    c2p(&mut connection, &mut proxy_conn);
+                    let d = to_sock.recv().unwrap();
+                    if !d.is_empty() {
+                        proxy_conn.write_all(d.as_slice()).unwrap();
+                    }
+//                    select!(
+//                        d = to_sock.recv().unwrap() => if !d.is_empty() {proxy_conn.write_all(d.as_slice()).unwrap()},
+//                        l = proxy_conn.read(&mut buf).unwrap() => if l > 0 {from_sock.send(buf.to_vec()).unwrap()}
+//                    );
+                    println!("Proxy: something moved!");
                 }
+            });
+
+            println!("Starting mage loop");
+            loop {
+                connection.channel_loop().unwrap();
+                println!("Mage: something moved!")
             }
         }
     }

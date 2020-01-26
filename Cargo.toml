@@ -19,7 +19,7 @@ required-features = ["tool"]
 bufstream = "*"
 sodiumoxide = "*"
 
-# Binary dependencies
+# Binary (=tool feature) dependencies
 base64 = { version = "*", optional = true }
 may = { version = "*", optional = true }
 structopt = { version = "*", optional = true }
@@ -35,8 +35,10 @@ url = "*"
 default = ["ffi", "trans_tcp"]
 
 channels = []
-tool = ["base64", "may", "structopt", "url", "trans_socks"]
 ffi = []
+
+#      |               Crates              |         Features         |
+tool = ["base64", "may", "structopt", "url", "channels", "trans_socks"]
 
 # Transports
 trans_tcp = []

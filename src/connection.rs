@@ -10,7 +10,7 @@ use crate::transport::ReadWrite;
 use {
     std::borrow::BorrowMut,
     std::io::{Error, ErrorKind},
-    std::sync::mpsc::{Sender, Receiver, channel as ch},
+    may::sync::mpsc::{Sender, Receiver, channel as ch},
 
     crate::error_str,
     crate::channel::Channel,
@@ -175,7 +175,7 @@ mod tests {
         test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[7; 100]);
         test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[]);
         test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[]);
-        // These polute the buffers!
+        // These pollute the buffers!
 //        test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[7; 100000]);
 //        test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[7; 100000]);
 

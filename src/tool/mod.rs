@@ -1,6 +1,7 @@
 extern crate url;
 
 pub mod key;
+pub mod proxy;
 
 use url::Url;
 
