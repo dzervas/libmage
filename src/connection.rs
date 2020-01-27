@@ -10,7 +10,7 @@ use crate::transport::ReadWrite;
 use {
     std::borrow::BorrowMut,
     std::io::{Error, ErrorKind},
-    may::sync::mpsc::{Sender, Receiver, channel as ch},
+    std::sync::mpsc::{Sender, Receiver, channel as ch},
 
     crate::error_str,
     crate::channel::Channel,
@@ -179,12 +179,14 @@ mod tests {
 //        test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[7; 100000]);
 //        test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[7; 100000]);
 
+        #[cfg(feature = "channels")]
+        test_channels(conn, conn2);
     }
 
-    #[test]
+//    #[test]
     #[cfg(feature = "channels")]
-    fn test_channels() {
-        let (mut conn, mut conn2) = connection_prelude();
+    fn test_channels(mut conn: Connection, mut conn2: Connection) {
+//        let (mut conn, mut conn2) = connection_prelude();
 
         let mut chan = conn.get_channel(4);
         let mut chan_other = conn.get_channel(0xF);

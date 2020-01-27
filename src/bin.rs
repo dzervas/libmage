@@ -6,13 +6,15 @@ extern crate structopt;
 
 use std::path::PathBuf;
 
-use mage::tool::{proxy, key, Address};
+use mage::tool::{key, Address};
 use mage::transport::*;
 use mage::connection::Connection;
 
-use may::sync::mpsc::{Sender, Receiver, channel};
 use structopt::StructOpt;
-use std::io::Read;
+use std::io::BufRead;
+use bufstream::BufStream;
+use std::net::{TcpListener, TcpStream};
+use std::io::Write;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "mage")]
@@ -136,39 +138,46 @@ fn main() {
             // While it's wrong to assume that if we listen we're server,
             // it's safe to assume and it's just about the proxy tool
             let mut connection = Box::new(Connection::new(0, Box::new(conn), mage_addr.listen, seed.as_slice(), remote_key.as_slice()).unwrap());
+            println!("AAA");
 
-            let mut proxy_conn = if proxy_listen {
-                let listener = Socks::listen((proxy_addr.as_str(), proxy_port)).unwrap();
-                listener.accept().unwrap()
+            let proxy_conn = if proxy_listen {
+                let listener = TcpListener::bind((proxy_addr.as_str(), proxy_port)).unwrap();
+                listener.accept().unwrap().0
             } else {
-                Socks::connect((proxy_addr.as_str(), proxy_port)).unwrap()
+                TcpStream::connect((proxy_addr.as_str(), proxy_port)).unwrap()
             };
 
+            let mut proxy_buf = BufStream::new(proxy_conn.try_clone().unwrap());
+            let mut proxy_buf2 = BufStream::new(proxy_conn);
+
             let ch = connection.get_channel(1);
-            let (tx, to_sock): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = channel();
-            let (from_sock, rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = channel();
             let (conn_tx, conn_rx) = (ch.sender, ch.receiver);
 
-            go!(|| {proxy::bridge(tx, conn_rx, "a")});
-            go!(|| {proxy::bridge(conn_tx, rx, "b")});
+            go!(move || {
+                loop {
+                    println!("Read");
+                    let buf = proxy_buf.fill_buf().unwrap();
+                    let length = buf.len();
+                    println!("Read2");
+                    if length > 0 {
+                        println!("sending {} bytes: {:?}", length, buf.clone());
+                        conn_tx.send(buf.to_vec()).unwrap();
+                    }
+                    proxy_buf.consume(length);
+                }
+            });
+
+            println!("here");
 
             go!(move || {
-                let mut buf = [0; 16];
-                println!("Starting proxy loop");
                 loop {
-                    let l = proxy_conn.read(&mut buf).unwrap();
-                    if l > 0 {
-                        from_sock.send(buf.to_vec());
-                    }
-
-                    let d = to_sock.recv().unwrap();
+                    println!("Recv");
+                    let d = conn_rx.recv().unwrap();
+                    println!("Recv2");
                     if !d.is_empty() {
-                        proxy_conn.write_all(d.as_slice()).unwrap();
+                        proxy_buf2.write_all(d.as_slice()).unwrap();
+                        proxy_buf2.flush().unwrap();
                     }
-//                    select!(
-//                        d = to_sock.recv().unwrap() => if !d.is_empty() {proxy_conn.write_all(d.as_slice()).unwrap()},
-//                        l = proxy_conn.read(&mut buf).unwrap() => if l > 0 {from_sock.send(buf.to_vec()).unwrap()}
-//                    );
                     println!("Proxy: something moved!");
                 }
             });

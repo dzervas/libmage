@@ -1,4 +1,4 @@
-use may::sync::mpsc::{Sender, Receiver};
+use std::sync::mpsc::{Sender, Receiver};
 use std::io::{Read, Write, Error, ErrorKind, Result};
 
 use super::error_str;
