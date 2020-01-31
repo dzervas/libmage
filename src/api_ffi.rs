@@ -193,7 +193,6 @@ fn new_socket(conn: Connection) -> c_int {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ptr::{null, null_mut};
     use std::thread::{spawn, sleep};
     use std::time::Duration;
 
@@ -249,13 +248,13 @@ mod tests {
         let med_buf = data.as_ptr();
         let buf = med_buf as *const _;
 
-        ffi_send(sock, buf, data.len(), 0)
+        ffi_send(sock, buf, data.len())
     }
 
     #[cfg_attr(tarpaulin, skip)]
     fn test_recv(sock: c_int, data: &mut [u8]) -> isize {
         let buf = data.as_mut_ptr() as *mut _;
 
-        ffi_recv(sock, buf, data.len(), 0)
+        ffi_recv(sock, buf, data.len())
     }
 }

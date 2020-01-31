@@ -4,7 +4,9 @@ package main
 // #cgo CFLAGS: -Itarget/release
 // #include "mage.h"
 import "C"
-import "unsafe"
+import (
+	"unsafe"
+)
 
 type Listener struct {
 	index C.int

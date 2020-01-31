@@ -12,15 +12,23 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - run: git fetch --no-tags --prune --depth=1 origin ${GITHUB_REF}
-      - name: Install stable toolchain
+
+      - name: Install Rust stable toolchain
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
+      - name: Install Go toolchain
+        uses: actions/setup-go@v1
+
       - name: Test Project on ${{ matrix.os }}
         run: cargo test -v --all-features
+      - name: Test Go Bindings on ${{ matrix.os }}
+        run: go test
 
       - name: Generate Coverage report
         if: runner.os == 'Linux'
         run: |
           cargo install cargo-tarpaulin
           cargo tarpaulin -v -b --all-features --coveralls ${{ secrets.COVERALLS_TOKEN }}
+
+          go get golang.org/x/tools/cmd/cover
