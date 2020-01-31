@@ -29,5 +29,5 @@ mod tests {
     // at the root of the crate instead of the module where it is defined
     use crate::test_transport;
 
-    test_transport!(test_transport_tcp, Tcp);
+    test_transport!(test_transport_tcp, Tcp, "13370");
 }

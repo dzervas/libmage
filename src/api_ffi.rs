@@ -1,5 +1,5 @@
 use std::io::{Read, Write};
-use std::os::raw::{c_void, c_int, c_uchar};
+use std::os::raw::c_void;
 use std::cell::RefCell;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 use std::thread_local;
@@ -12,6 +12,7 @@ use crate::channel::Channel;
 
 #[cfg(not(test))]
 use crate::settings::*;
+use std::ffi::{CStr, CString};
 
 #[cfg(test)]
 type TRANSPORT = Tcp;
@@ -49,10 +50,11 @@ thread_local! {
 
 // TODO: Handle all panics - not supported by FFI, undefined behaviour
 
-// _sockaddr & _address_len kept for hooking signature compatibility with libc
 #[no_mangle]
-pub extern fn ffi_connect() -> c_int {
-    let new_conn = TRANSPORT::connect(ADDRESS).unwrap();
+pub extern fn ffi_connect_str(addr: *const i8) -> usize {
+    let addr_str = unsafe { CStr::from_ptr(addr)}.to_str().unwrap();
+
+    let new_conn = TRANSPORT::connect(addr_str).unwrap();
 
     #[cfg(test)]
     const_test_connect!();
@@ -62,10 +64,16 @@ pub extern fn ffi_connect() -> c_int {
     new_socket(conn)
 }
 
-// _backlog kept for hooking signature compatibility with libc
 #[no_mangle]
-pub extern fn ffi_listen() -> c_int {
-    let new_accept = TRANSPORT::listen(ADDRESS).unwrap();
+pub extern fn ffi_connect() -> usize {
+    let c_str = CString::new(ADDRESS).unwrap();
+    ffi_connect_str(c_str.as_ptr() as *const i8)
+}
+
+#[no_mangle]
+pub extern fn ffi_listen_str(addr: *const i8) -> usize {
+    let addr_str = unsafe { CStr::from_ptr(addr)}.to_str().unwrap();
+    let new_accept = TRANSPORT::listen(addr_str).unwrap();
 
     ACCEPT.with(move |cell| {
         let mut a = cell.borrow_mut();
@@ -73,14 +81,20 @@ pub extern fn ffi_listen() -> c_int {
         a.push(new_accept);
 
         #[cfg(not(test))]
-        println!("New listener: {}", a.len() as c_int - 1);
+        println!("New listener: {}", a.len() - 1);
 
-        a.len() as c_int - 1  // len() is +1
+        a.len() - 1  // len() is +1
     })
 }
 
 #[no_mangle]
-pub extern fn ffi_accept(socket: c_int) -> c_int {
+pub extern fn ffi_listen() -> usize {
+    let c_str = CString::new(ADDRESS).unwrap();
+    ffi_listen_str(c_str.as_ptr() as *const i8)
+}
+
+#[no_mangle]
+pub extern fn ffi_accept(socket: usize) -> usize {
     let accepted = ACCEPT.with(|cell| {
         let a = cell.borrow_mut();
 
@@ -95,7 +109,7 @@ pub extern fn ffi_accept(socket: c_int) -> c_int {
 }
 
 #[no_mangle]
-pub extern fn ffi_send(socket: c_int, msg: *const c_void, size: usize) -> isize {
+pub extern fn ffi_send(socket: usize, msg: *const c_void, size: usize) -> usize {
     // TODO: Use snappy compress https://doc.rust-lang.org/nomicon/ffi.html#creating-a-safe-interface to ensure safety of given buffers
     // TODO: Handle nulls
     let buf = unsafe { from_raw_parts(msg as *const u8, size) };
@@ -105,29 +119,29 @@ pub extern fn ffi_send(socket: c_int, msg: *const c_void, size: usize) -> isize 
 
         // TODO: Get rid of all those unwraps maybe? Maybe try to recover?
         let sock = s.get_mut(socket as usize).unwrap();
-        sock.write(buf).unwrap() as isize
+        sock.write(buf).unwrap()
     })
 }
 
 #[no_mangle]
-pub extern fn ffi_recv(socket: c_int, msg: *mut c_void, size: usize) -> isize {
+pub extern fn ffi_recv(socket: usize, msg: *mut c_void, size: usize) -> usize {
     let buf = unsafe { from_raw_parts_mut(msg as *mut u8, size) };
 
     SOCKET.with(|cell| {
         let mut s = cell.borrow_mut();
 
-        let sock = s.get_mut(socket as usize).unwrap();
-        sock.read(buf).unwrap() as isize
+        let sock = s.get_mut(socket).unwrap();
+        sock.read(buf).unwrap()
     })
 }
 
 #[no_mangle]
 #[cfg(feature = "channels")]
-pub extern fn ffi_get_channel(socket: c_int, channel: c_uchar) -> c_int {
+pub extern fn ffi_get_channel(socket: usize, channel: u8) -> usize {
     let chan = SOCKET.with(|cell| {
         let mut s = cell.borrow_mut();
 
-        let sock = s.get_mut(socket as usize).unwrap();
+        let sock = s.get_mut(socket).unwrap();
         sock.get_channel(channel)
     });
 
@@ -136,57 +150,57 @@ pub extern fn ffi_get_channel(socket: c_int, channel: c_uchar) -> c_int {
 
         s.push(chan);
 
-        (s.len() - 1) as c_int
+        s.len() - 1
     })
 }
 
 #[no_mangle]
 #[cfg(feature = "channels")]
-pub extern fn ffi_channel_loop(socket: c_int) {
+pub extern fn ffi_channel_loop(socket: usize) {
     SOCKET.with(|cell| {
         let mut s = cell.borrow_mut();
 
-        let sock = s.get_mut(socket as usize).unwrap();
+        let sock = s.get_mut(socket).unwrap();
         sock.channel_loop().unwrap();
     });
 }
 
 #[no_mangle]
 #[cfg(feature = "channels")]
-pub extern fn ffi_send_channel(channel: c_int, msg: *mut c_void, size: usize) -> isize {
+pub extern fn ffi_send_channel(channel: usize, msg: *mut c_void, size: usize) -> usize {
     let buf = unsafe { from_raw_parts_mut(msg as *mut u8, size) };
 
     CHANNEL.with(|cell| {
         let mut s = cell.borrow_mut();
 
-        let chan = s.get_mut(channel as usize).unwrap();
-        chan.write(buf).unwrap() as isize
+        let chan = s.get_mut(channel).unwrap();
+        chan.write(buf).unwrap()
     })
 }
 
 #[no_mangle]
 #[cfg(feature = "channels")]
-pub extern fn ffi_recv_channel(channel: c_int, msg: *mut c_void, size: usize) -> isize {
+pub extern fn ffi_recv_channel(channel: usize, msg: *mut c_void, size: usize) -> usize {
     let buf = unsafe { from_raw_parts_mut(msg as *mut u8, size) };
 
     CHANNEL.with(|cell| {
         let mut s = cell.borrow_mut();
 
-        let chan = s.get_mut(channel as usize).unwrap();
-        chan.read(buf).unwrap() as isize
+        let chan = s.get_mut(channel).unwrap();
+        chan.read(buf).unwrap()
     })
 }
 
-fn new_socket(conn: Connection) -> c_int {
+fn new_socket(conn: Connection) -> usize {
     SOCKET.with(move |cell| {
         let mut s = cell.borrow_mut();
 
         s.push(conn);
 
         #[cfg(not(test))]
-        println!("New socket: {}", s.len() as c_int - 1);
+        println!("New socket: {}", s.len() - 1);
 
-        s.len() as c_int - 1  // len() is +1
+        s.len() - 1  // len() is +1
     })
 }
 
@@ -208,6 +222,7 @@ mod tests {
             test_listening()
         });
 
+        sleep(Duration::from_millis(100));
         test_connecting();
         assert!(thread.join().is_ok(), "Thread panicked!");
     }
@@ -226,25 +241,20 @@ mod tests {
         assert_eq!(data.to_vec(), vec![1; 1000]);
     }
 
+    #[cfg_attr(tarpaulin, skip)]
     fn test_connecting() {
-        sleep(Duration::from_millis(50));
+        let sock = ffi_connect();
 
-        loop {
-            let sock = ffi_connect();
+        let mut data = [1; 1000];
 
-            if sock == -1 { break }
+        test_send(sock, data.to_vec());
+        test_recv(sock, &mut data);
 
-            let mut data = [1; 1000];
-
-            test_send(sock, data.to_vec());
-            test_recv(sock, &mut data);
-
-            assert_eq!(data.to_vec(), vec![1; 1000]);
-        }
+        assert_eq!(data.to_vec(), vec![1; 1000]);
     }
 
     #[cfg_attr(tarpaulin, skip)]
-    fn test_send(sock: c_int, data: Vec<u8>) -> isize {
+    fn test_send(sock: usize, data: Vec<u8>) -> usize {
         let med_buf = data.as_ptr();
         let buf = med_buf as *const _;
 
@@ -252,7 +262,7 @@ mod tests {
     }
 
     #[cfg_attr(tarpaulin, skip)]
-    fn test_recv(sock: c_int, data: &mut [u8]) -> isize {
+    fn test_recv(sock: usize, data: &mut [u8]) -> usize {
         let buf = data.as_mut_ptr() as *mut _;
 
         ffi_recv(sock, buf, data.len())

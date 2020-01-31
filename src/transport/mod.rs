@@ -94,17 +94,17 @@ pub mod tests {
     // Transport Tests
     #[macro_export]
     macro_rules! test_transport {
-        ($name:ident, $t:ty) => {
+        ($name:ident, $t:ty, $port:literal) => {
             use crate::transport::tests::test_listen_conn_inner;
 
             #[test]
             fn $name() {
-                test_listen_conn_inner::<$t>(true, "127.0.0.1:13337", vec![1; 10], vec![4; 10]);
-                test_listen_conn_inner::<$t>(true, "127.0.0.1:13337", vec![1; 512], vec![4; 512]);
-                test_listen_conn_inner::<$t>(true, "127.0.0.1:13337", vec![1; 10000], vec![4; 10000]);
+                test_listen_conn_inner::<$t>(true, concat!("127.0.0.1:", $port), vec![1; 10], vec![4; 10]);
+                test_listen_conn_inner::<$t>(true, concat!("127.0.0.1:", $port), vec![1; 512], vec![4; 512]);
+                test_listen_conn_inner::<$t>(true, concat!("127.0.0.1:", $port), vec![1; 10000], vec![4; 10000]);
                 // These block (duh...)
-//                test_listen_conn_inner::<$t>(true, "127.0.0.1:13337", vec![], vec![4; 10]);
-//                test_listen_conn_inner::<$t>(true, "127.0.0.1:13337", vec![100; 10000], vec![]);
+//                test_listen_conn_inner::<$t>(true, ("127.0.0.1", $port), vec![], vec![4; 10]);
+//                test_listen_conn_inner::<$t>(true, ("127.0.0.1", $port), vec![100; 10000], vec![]);
             }
         }
     }

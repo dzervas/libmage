@@ -1,5 +1,5 @@
 use std::net::ToSocketAddrs;
-use std::io::Result;
+use std::io::{Result, Read, Write};
 
 use super::{Connector, Listener, ReadWrite, Tcp};
 
@@ -67,5 +67,5 @@ mod tests {
     use super::*;
     use crate::test_transport;
 
-    test_transport!(test_transport_socks, Socks);
+    test_transport!(test_transport_socks, Socks, "13371");
 }
