@@ -12,7 +12,7 @@ use crate::channel::Channel;
 
 #[cfg(not(test))]
 use crate::settings::*;
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 
 #[cfg(test)]
 type TRANSPORT = Tcp;
@@ -50,30 +50,34 @@ thread_local! {
 
 // TODO: Handle all panics - not supported by FFI, undefined behaviour
 
-#[no_mangle]
-pub extern fn ffi_connect_str(addr: *const i8) -> usize {
-    let addr_str = unsafe { CStr::from_ptr(addr)}.to_str().unwrap();
+fn _connect(addr: &str, listen: bool, seed: &[u8], key: &[u8]) -> usize {
+    let new_conn = TRANSPORT::connect(addr).unwrap();
 
-    let new_conn = TRANSPORT::connect(addr_str).unwrap();
-
-    #[cfg(test)]
-    const_test_connect!();
-
-    let conn = Connection::new(0, Box::new(new_conn), LISTEN, SEED, REMOTE_KEY).unwrap();
+    let conn = Connection::new(0, Box::new(new_conn), listen, seed, key).unwrap();
 
     new_socket(conn)
 }
 
 #[no_mangle]
-pub extern fn ffi_connect() -> usize {
-    let c_str = CString::new(ADDRESS).unwrap();
-    ffi_connect_str(c_str.as_ptr() as *const i8)
+pub extern fn ffi_connect_opt(addr: *const i8, listen: u8, seed: *const u8, key: *const u8) -> usize {
+    let addr_str = unsafe { CStr::from_ptr(addr)}.to_str().unwrap();
+    let listen_bool = if listen != 0 { true } else { false };
+    let seed_bytes = unsafe { from_raw_parts(seed, 32) };
+    let key_bytes = unsafe { from_raw_parts(key, 32) };
+
+    _connect(addr_str, listen_bool, seed_bytes, key_bytes)
 }
 
 #[no_mangle]
-pub extern fn ffi_listen_str(addr: *const i8) -> usize {
-    let addr_str = unsafe { CStr::from_ptr(addr)}.to_str().unwrap();
-    let new_accept = TRANSPORT::listen(addr_str).unwrap();
+pub extern fn ffi_connect() -> usize {
+    #[cfg(test)]
+    const_test_connect!();
+
+    _connect(ADDRESS, LISTEN, SEED, REMOTE_KEY)
+}
+
+fn _listen(addr: &str) -> usize {
+    let new_accept = TRANSPORT::listen(addr).unwrap();
 
     ACCEPT.with(move |cell| {
         let mut a = cell.borrow_mut();
@@ -88,24 +92,43 @@ pub extern fn ffi_listen_str(addr: *const i8) -> usize {
 }
 
 #[no_mangle]
-pub extern fn ffi_listen() -> usize {
-    let c_str = CString::new(ADDRESS).unwrap();
-    ffi_listen_str(c_str.as_ptr() as *const i8)
+pub extern fn ffi_listen_opt(addr: *const i8) -> usize {
+    let addr_str = unsafe { CStr::from_ptr(addr)}.to_str().unwrap();
+    _listen(addr_str)
 }
 
 #[no_mangle]
-pub extern fn ffi_accept(socket: usize) -> usize {
+pub extern fn ffi_listen() -> usize {
+    _listen(ADDRESS)
+}
+
+fn _accept(socket: usize, listen: bool, seed: &[u8], key: &[u8]) -> usize {
     let accepted = ACCEPT.with(|cell| {
         let a = cell.borrow_mut();
 
         a.get(socket as usize).unwrap().accept().unwrap()
     });
 
-    #[cfg(test)]
-    const_test_listen!();
-    let conn = Connection::new(0, accepted, LISTEN, SEED, REMOTE_KEY).unwrap();
+    let conn = Connection::new(0, accepted, listen, seed, key).unwrap();
 
     new_socket(conn)
+}
+
+#[no_mangle]
+pub extern fn ffi_accept_opt(socket: usize, listen: u8, seed: *const u8, key: *const u8) -> usize {
+    let listen_bool = if listen != 0 { true } else { false };
+    let seed_bytes = unsafe { from_raw_parts(seed, 32) };
+    let key_bytes = unsafe { from_raw_parts(key, 32) };
+
+    _accept(socket, listen_bool, seed_bytes, key_bytes)
+}
+
+#[no_mangle]
+pub extern fn ffi_accept(socket: usize) -> usize {
+    #[cfg(test)]
+    const_test_listen!();
+
+    _accept(socket, LISTEN, SEED, REMOTE_KEY)
 }
 
 #[no_mangle]

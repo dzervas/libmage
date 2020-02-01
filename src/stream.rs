@@ -5,7 +5,7 @@ use crate::packet::{Packet, PacketConfig};
 
 use sodiumoxide::crypto::{kx, secretstream};
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum State {
     Uninitialized,
     SentHeader,
