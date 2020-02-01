@@ -21,14 +21,16 @@ jobs:
         uses: actions/setup-go@v1
 
       - name: Test Project on ${{ matrix.os }}
-        run: cargo test -v --all-features
+        run: cargo test -v --all-features --release
+      - if: runner.os != 'Windows'
+        run: export LD_LIBRARY_PATH="target/release"
       - name: Test Go Bindings on ${{ matrix.os }}
-        run: go test
+        run: |
+          cargo build -v --all-features --release
+          go test -v
 
       - name: Generate Coverage report
         if: runner.os == 'Linux'
         run: |
           cargo install cargo-tarpaulin
           cargo tarpaulin -v -b --all-features --coveralls ${{ secrets.COVERALLS_TOKEN }}
-
-          go get golang.org/x/tools/cmd/cover

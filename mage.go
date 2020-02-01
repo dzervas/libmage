@@ -1,4 +1,7 @@
 package main
+import "C"
+// `cargo build --release --features ffi` to use this!
+// On linux `LD_LIBRARY_PATH=target/release`
 
 // #cgo LDFLAGS: -Ltarget/release -lmage
 // #cgo CFLAGS: -Itarget/release
