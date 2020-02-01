@@ -40,5 +40,5 @@ jobs:
 
           go get golang.org/x/tools/cmd/cover
           go get github.com/mattn/goveralls
-          go test -v -covermode count -coverprofile=profile.cov
+          go test -v -covermode count -coverprofile=profile.cov ./...
           $(go env GOPATH)/bin/goveralls -repotoken ${{ secrets.COVERALLS_TOKEN }} -parallel -coverprofile=profile.cov -service github

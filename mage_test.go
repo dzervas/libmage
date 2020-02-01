@@ -24,11 +24,13 @@ func HelpListen(t *testing.T) {
 		t.Errorf("buf should be 'World', but it's '%s'", buf)
 	}
 
-	//c.Read(buf)
-	//c.Write([]byte("hoho!"))
-	//if string(buf) != "haha!" {
-	//	t.Errorf("buf should be 'haha!', but it's '%s'", buf)
-	//}
+	fmt.Println("[Go] Channels:")
+
+	c.Write([]byte("hoho!"))
+	c.Read(buf)
+	if string(buf) != "haha!" {
+		t.Errorf("buf should be 'haha!', but it's '%s'", buf)
+	}
 }
 
 func HelpConnect(t *testing.T) *Connection {
@@ -52,18 +54,21 @@ func HelpConnect(t *testing.T) *Connection {
 func TestListenConnect(t *testing.T) {
 	go HelpListen(t)
 	time.Sleep(100 * time.Millisecond)
-	HelpConnect(t)
-	//c := HelpConnect(t)
-	//
-	//ch := c.GetChannel(0) // 0 is the default used channel
-	//buf := []byte("haha!")
-	//fmt.Println("hi")
-	//
-	////c.ChannelLoop()
-	//ch.Write(buf)
-	//ch.Read(buf)
-	//
-	//if string(buf) != "hoho!" {
-	//	t.Errorf("buf should be 'hoho!', but it's '%s'", buf)
-	//}
+	c := HelpConnect(t)
+
+	ch := c.GetChannel(0) // 0 is the default used channel
+	buf := []byte("haha!")
+
+	//go func() {c.ChannelLoop()}()
+	//go func() {ch.Read(buf)}()
+	fmt.Println("[Go] Loop")
+	c.ChannelLoop()
+	fmt.Println("[Go] Read")
+	ch.Read(buf)
+	fmt.Println("[Go] Write")
+	ch.Write(buf)
+
+	if string(buf) != "hoho!" {
+		t.Errorf("buf should be 'hoho!', but it's '%s'", buf)
+	}
 }

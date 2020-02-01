@@ -19,6 +19,9 @@ required-features = ["tool"]
 bufstream = "*"
 sodiumoxide = "*"
 
+# FFI
+lazy_static = { version = "*", optional = true }
+
 # Binary (=tool feature) dependencies
 base64 = { version = "*", optional = true }
 may = { version = "*", optional = true }
@@ -35,7 +38,7 @@ url = "*"
 default = ["ffi", "trans_tcp"]
 
 channels = []
-ffi = []
+ffi = ["lazy_static"]
 
 #      |               Crates              |         Features         |
 tool = ["base64", "may", "structopt", "url", "channels", "trans_socks"]

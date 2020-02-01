@@ -49,7 +49,7 @@ impl Connection {
         self.rw.consume(size);
 
         for p in packets {
-            result.entry(p.get_channel()).or_insert(Vec::new()).extend(p.data);
+            result.entry(p.get_channel()).or_insert_with(Vec::new).extend(p.data);
         }
 
         Ok(result)
@@ -62,7 +62,8 @@ impl Connection {
         for p in packets {
             result += self.rw.write(p.as_slice())?;
         }
-        // Is that needed?
+
+        // Is this needed?
         self.rw.flush()?;
 
         Ok(result)
@@ -72,8 +73,8 @@ impl Connection {
     pub fn get_channel(&mut self, channel: u8) -> Channel {
         let (from_ch, to_conn) = ch();
         let (from_conn, to_ch) = ch();
-        self.channels.entry(channel).or_insert(Vec::new()).push((from_conn, to_conn));
-        println!("{:?}", self.channels);
+        self.channels.entry(channel).or_insert_with(Vec::new).push((from_conn, to_conn));
+        println!("New Channel {:?}", self.channels);
 
         Channel {
             sender: from_ch,
@@ -83,29 +84,36 @@ impl Connection {
 
     #[cfg(feature = "channels")]
     pub fn channel_loop(&mut self) -> Result<()> {
-        for (k, v) in self.read_all_channels().unwrap().iter() {
-            for c in self.channels.get(k).unwrap() {
-                let r = c.0.send(v.clone());
+        for (chan, data) in self.read_all_channels()?.iter() {
+            let channels = match self.channels.get(chan) {
+                Some(d) => d,
+                None => continue
+            };
+
+            for c in channels {
+                let r = c.0.send(data.clone());
                 if r.is_err() { return Err(error_str!("Unable to send message")); }
             }
         }
 
-        // Maybe do this a better way?
+        // The data is first buffered to the HashMap buf and then sent
         // Can't call write_channel inside iter cause it's already borrowed
+        // Have I mentioned before that I want the borrow checked to go fuck
+        // itself? No? Happy to do so :)
         let mut buf: HashMap<u8, Vec<u8>> = HashMap::new();
 
-        for (k, v) in self.channels.iter() {
-            for (_, r) in v {
-                let d = r.try_recv();
-                if d.is_ok() {
-                    buf.entry(*k).or_insert(Vec::new()).append(d.unwrap().to_vec().borrow_mut());
+        for (chan, receivers) in self.channels.iter() {
+            for (_, recv) in receivers {
+                if let Ok(d) = recv.try_recv() {
+                    buf.entry(*chan)
+                        .or_insert_with(Vec::new)
+                        .append(d.to_vec().borrow_mut())
                 }
             }
         }
 
-        for (k, v) in buf.iter() {
-            self.write_channel(*k, v.as_slice())?;
-            self.flush()?;
+        for (chan, data) in buf.iter() {
+            self.write_channel(*chan, data.as_slice())?;
         }
 
         Ok(())
@@ -118,9 +126,12 @@ impl Read for Connection {
         let dechunked = self.read_all_channels()?;
 
         // Dunno how to hit "None"
-        let bytes = dechunked.get(&0u8).unwrap();
+        let bytes = match dechunked.get(&0u8) {
+            Some(d) => d.as_slice(),
+            None => &[]
+        };
 
-        buf.write(bytes.as_slice())
+        buf.write(bytes)
     }
 }
 
@@ -175,6 +186,9 @@ mod tests {
         test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[7; 100]);
         test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[]);
         test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[]);
+        conn.write_channel(1, &[1; 10]).unwrap();
+        let mut buf = [5; 10];
+        assert_eq!(conn2.read(&mut buf).unwrap(), 0);
         // These pollute the buffers!
 //        test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[7; 100000]);
 //        test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[7; 100000]);
@@ -186,8 +200,6 @@ mod tests {
 //    #[test]
     #[cfg(feature = "channels")]
     fn test_channels(mut conn: Connection, mut conn2: Connection) {
-//        let (mut conn, mut conn2) = connection_prelude();
-
         let mut chan = conn.get_channel(4);
         let mut chan_other = conn.get_channel(0xF);
 
@@ -209,7 +221,7 @@ mod tests {
         // I see no other way than sleep.
         // channel_loop is non-blocking (should be) and the test
         // has to end at some point
-        for _ in 0..6 {
+        for _ in 0..8 {
             sleep(Duration::from_millis(100));
             conn.channel_loop().unwrap();
             sleep(Duration::from_millis(100));

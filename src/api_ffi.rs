@@ -1,6 +1,7 @@
+use std::cell::RefCell;
+use std::ffi::CStr;
 use std::io::{Read, Write};
 use std::os::raw::c_void;
-use std::cell::RefCell;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 use std::thread_local;
 
@@ -12,7 +13,6 @@ use crate::channel::Channel;
 
 #[cfg(not(test))]
 use crate::settings::*;
-use std::ffi::CStr;
 
 #[cfg(test)]
 type TRANSPORT = Tcp;
@@ -41,6 +41,21 @@ macro_rules! const_test_listen {
 // Known keys: vec![1; 32] -> public vec![171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111]
 // Known keys: vec![2; 32] -> public vec![252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6]
 
+// Thread local is used instead of lazy_static, as the tests do not run with lazy_static.
+// They deadlock. While that's test-specific problem, I can see it rising on apps as well
+// The deadlock happens when you try to listen AND connect at the same time to yourself.
+// As `connect` blocks till it connects and `accept` blocks till it accepts a connection
+// However, thread local means that in go for example you can't:
+// c := ffi_connect(...)
+// ch := ffi_get_channel(...)
+// go ffi_channel_loop()
+// as `go <whatever>` is a different "thread" (for what Rust knows), so the `SOCKET` (created from
+// the main thread) will not be there, `ffi_channel_loop` will die
+// due to `SOCKET.get_mut(...).unwrap()`.
+// (`go <whatever>` spawns a co-routine in go, check it out, it's amazing)
+//
+// Fuck.
+// 2020 ~ The Witcher
 thread_local! {
     static SOCKET: RefCell<Vec<Connection>> = RefCell::new(Vec::new());
     static ACCEPT: RefCell<Vec<TRANSPORT>> = RefCell::new(Vec::new());
