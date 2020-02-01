@@ -24,9 +24,9 @@ jobs:
         run: cargo test -v --all-features --release
       - name: Build Project on ${{ matrix.os }}
         run: cargo build -v --all-features --release
-      - if: runner.os != 'Windows'
-        run: export LD_LIBRARY_PATH="target/release"
       - name: Test Go Bindings on ${{ matrix.os }}
+        env:
+          LD_LIBRARY_PATH: "target/release"
         run: |
           go get golang.org/x/tools/cmd/cover
           go test -v -covermode count -coverprofile=profile.cov
