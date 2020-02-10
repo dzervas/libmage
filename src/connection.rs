@@ -83,38 +83,47 @@ impl Connection {
     }
 
     #[cfg(feature = "channels")]
-    pub fn channel_loop(&mut self) -> Result<()> {
-        for (chan, data) in self.read_all_channels()?.iter() {
-            let channels = match self.channels.get(chan) {
-                Some(d) => d,
-                None => continue
-            };
+    pub async fn channel_read_loop(&mut self) -> Result<()> {
+        async move {
+            let buf = self.read_all_channels().unwrap();
+            for (chan, data) in buf.iter() {
+                let channels = match self.channels.get(chan) {
+                    Some(d) => d,
+                    None => continue
+                };
 
-            for c in channels {
-                let r = c.0.send(data.clone());
-                if r.is_err() { return Err(error_str!("Unable to send message")); }
+                for c in channels {
+                    let r = c.0.send(data.clone());
+                    if r.is_err() { return Err(error_str!("Unable to send message")); }
+                }
             }
-        }
+            Ok(())
+        }.await
+    }
 
+    #[cfg(feature = "channels")]
+    pub async fn channel_write_loop(&mut self) -> Result<()> {
         // The data is first buffered to the HashMap buf and then sent
         // Can't call write_channel inside iter cause it's already borrowed
         // Have I mentioned before that I want the borrow checked to go fuck
         // itself? No? Happy to do so :)
         let mut buf: HashMap<u8, Vec<u8>> = HashMap::new();
 
-        for (chan, receivers) in self.channels.iter() {
-            for (_, recv) in receivers {
-                if let Ok(d) = recv.try_recv() {
-                    buf.entry(*chan)
-                        .or_insert_with(Vec::new)
-                        .append(d.to_vec().borrow_mut())
+        async move {
+            for (chan, receivers) in self.channels.iter() {
+                for (_, recv) in receivers {
+                    if let Ok(d) = recv.try_recv() {
+                        buf.entry(*chan)
+                            .or_insert_with(Vec::new)
+                            .append(d.to_vec().borrow_mut())
+                    }
                 }
             }
-        }
 
-        for (chan, data) in buf.iter() {
-            self.write_channel(*chan, data.as_slice())?;
-        }
+            for (chan, data) in buf.iter() {
+                self.write_channel(*chan, data.as_slice());
+            }
+        }.await;
 
         Ok(())
     }
@@ -223,9 +232,9 @@ mod tests {
         // has to end at some point
         for _ in 0..8 {
             sleep(Duration::from_millis(100));
-            conn.channel_loop().unwrap();
+            conn.channel_read_loop().unwrap();
             sleep(Duration::from_millis(100));
-            conn2.channel_loop().unwrap();
+            conn2.channel_read_loop().unwrap();
         }
 
         thread.join().unwrap();

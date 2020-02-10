@@ -19,6 +19,9 @@ required-features = ["tool"]
 bufstream = "*"
 sodiumoxide = "*"
 
+# Channels
+futures = { version = "*", optional = true }
+
 # Binary (=tool feature) dependencies
 base64 = { version = "*", optional = true }
 may = { version = "*", optional = true }
@@ -34,7 +37,7 @@ url = "*"
 [features]
 default = ["ffi", "trans_tcp"]
 
-channels = []
+channels = [ "futures" ]
 ffi = []
 
 #      |               Crates              |         Features         |

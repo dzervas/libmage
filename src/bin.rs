@@ -15,6 +15,7 @@ use std::io::BufRead;
 use bufstream::BufStream;
 use std::net::{TcpListener, TcpStream};
 use std::io::Write;
+use futures::executor::block_on;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "mage")]
@@ -79,7 +80,7 @@ enum Command {
     }
 }
 
-fn main() {
+async fn async_main() {
     let opts: Opts = Opts::from_args();
 
     let mut seed = if opts.input.is_some() {
@@ -184,9 +185,14 @@ fn main() {
 
             println!("Starting mage loop");
             loop {
-                connection.channel_loop().unwrap();
+                connection.channel_read_loop().await;
+                connection.channel_write_loop().await;
                 println!("Mage: something moved!")
             }
         }
     }
+}
+
+fn main() {
+    block_on(async_main());
 }

@@ -4,6 +4,10 @@ use std::io::{Read, Write};
 use std::os::raw::c_void;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 use std::thread_local;
+#[cfg(feature = "channels")]
+extern crate futures;
+#[cfg(feature = "channels")]
+use futures::executor::block_on;
 
 use crate::connection::Connection;
 use crate::transport::*;
@@ -199,7 +203,7 @@ pub extern fn ffi_channel_loop(socket: usize) {
         let mut s = cell.borrow_mut();
 
         let sock = s.get_mut(socket).unwrap();
-        sock.channel_loop().unwrap();
+        block_on(sock.channel_read_loop());
     });
 }
 
