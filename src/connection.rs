@@ -121,7 +121,7 @@ impl Connection {
             }
 
             for (chan, data) in buf.iter() {
-                self.write_channel(*chan, data.as_slice());
+                self.write_channel(*chan, data.as_slice()).unwrap();
             }
         }.await;
 

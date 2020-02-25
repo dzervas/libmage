@@ -19,6 +19,9 @@ required-features = ["tool"]
 bufstream = "*"
 sodiumoxide = "*"
 
+# API-FFI
+lazy_static = { version = "*", optional = true }
+
 # Channels
 futures = { version = "*", optional = true }
 

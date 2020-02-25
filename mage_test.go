@@ -59,10 +59,21 @@ func TestListenConnect(t *testing.T) {
 	ch := c.GetChannel(0) // 0 is the default used channel
 	buf := []byte("haha!")
 
-	//go func() {c.ChannelLoop()}()
+	go func() {
+		for {
+			c.ChannelReadLoop()
+		}
+	}()
+
+	go func() {
+		for {
+			c.ChannelWriteLoop()
+		}
+	}()
+
 	//go func() {ch.Read(buf)}()
 	fmt.Println("[Go] Loop")
-	c.ChannelLoop()
+	//c.ChannelLoop()
 	fmt.Println("[Go] Read")
 	ch.Read(buf)
 	fmt.Println("[Go] Write")

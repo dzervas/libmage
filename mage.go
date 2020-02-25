@@ -3,8 +3,8 @@ import "C"
 // `cargo build --release --features ffi` to use this!
 // On linux `LD_LIBRARY_PATH=target/release`
 
-// #cgo LDFLAGS: -Ltarget/release -lmage
-// #cgo CFLAGS: -Itarget/release
+// #cgo LDFLAGS: -Ltarget/debug -lmage
+// #cgo CFLAGS: -Itarget/debug
 // #include "mage.h"
 import "C"
 import (
@@ -66,8 +66,12 @@ func (c *Connection) GetChannel(i byte) *Channel {
 	return &Channel { index: r }
 }
 
-func (c *Connection) ChannelLoop() {
-	C.ffi_channel_loop(c.index)
+func (c *Connection) ChannelReadLoop() {
+	C.ffi_channel_read_loop(c.index)
+}
+
+func (c *Connection) ChannelWriteLoop() {
+	C.ffi_channel_write_loop(c.index)
 }
 
 func (c *Connection) Read(buffer []byte) (int, error) {

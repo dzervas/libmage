@@ -1,9 +1,12 @@
-use std::cell::RefCell;
 use std::ffi::CStr;
 use std::io::{Read, Write};
 use std::os::raw::c_void;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
-use std::thread_local;
+use std::sync::Mutex;
+
+extern crate lazy_static;
+use lazy_static::lazy_static;
+
 #[cfg(feature = "channels")]
 extern crate futures;
 #[cfg(feature = "channels")]
@@ -60,11 +63,11 @@ macro_rules! const_test_listen {
 //
 // Fuck.
 // 2020 ~ The Witcher
-thread_local! {
-    static SOCKET: RefCell<Vec<Connection>> = RefCell::new(Vec::new());
-    static ACCEPT: RefCell<Vec<TRANSPORT>> = RefCell::new(Vec::new());
+lazy_static! {
+    static ref SOCKET: Mutex<Vec<Connection>> = Mutex::new(Vec::new());
+    static ref ACCEPT: Mutex<Vec<TRANSPORT>> = Mutex::new(Vec::new());
     #[cfg(feature = "channels")]
-    static CHANNEL: RefCell<Vec<Channel>> = RefCell::new(Vec::new());
+    static ref CHANNEL: Mutex<Vec<Channel>> = Mutex::new(Vec::new());
 }
 
 // TODO: Handle all panics - not supported by FFI, undefined behaviour
@@ -98,16 +101,14 @@ pub extern fn ffi_connect() -> usize {
 fn _listen(addr: &str) -> usize {
     let new_accept = TRANSPORT::listen(addr).unwrap();
 
-    ACCEPT.with(move |cell| {
-        let mut a = cell.borrow_mut();
+    let mut a = ACCEPT.lock().unwrap();
 
-        a.push(new_accept);
+    a.push(new_accept);
 
-        #[cfg(not(test))]
-        println!("New listener: {}", a.len() - 1);
+    #[cfg(not(test))]
+    println!("New listener: {}", a.len() - 1);
 
-        a.len() - 1  // len() is +1
-    })
+    a.len() - 1  // len() is +1
 }
 
 #[no_mangle]
@@ -122,11 +123,9 @@ pub extern fn ffi_listen() -> usize {
 }
 
 fn _accept(socket: usize, listen: bool, seed: &[u8], key: &[u8]) -> usize {
-    let accepted = ACCEPT.with(|cell| {
-        let a = cell.borrow_mut();
-
-        a.get(socket as usize).unwrap().accept().unwrap()
-    });
+    let a = ACCEPT.lock().unwrap();
+    let accepted = a.get(socket as usize).unwrap().accept().unwrap();
+    drop(a);
 
     let conn = Connection::new(0, accepted, listen, seed, key).unwrap();
 
@@ -156,55 +155,52 @@ pub extern fn ffi_send(socket: usize, msg: *const c_void, size: usize) -> usize 
     // TODO: Handle nulls
     let buf = unsafe { from_raw_parts(msg as *const u8, size) };
 
-    SOCKET.with(|cell| {
-        let mut s = cell.borrow_mut();
+    let mut s = SOCKET.lock().unwrap();
 
-        // TODO: Get rid of all those unwraps maybe? Maybe try to recover?
-        let sock = s.get_mut(socket as usize).unwrap();
-        sock.write(buf).unwrap()
-    })
+    // TODO: Get rid of all those unwraps maybe? Maybe try to recover?
+    let sock = s.get_mut(socket as usize).unwrap();
+    sock.write(buf).unwrap()
 }
 
 #[no_mangle]
 pub extern fn ffi_recv(socket: usize, msg: *mut c_void, size: usize) -> usize {
     let buf = unsafe { from_raw_parts_mut(msg as *mut u8, size) };
 
-    SOCKET.with(|cell| {
-        let mut s = cell.borrow_mut();
+    let mut s = SOCKET.lock().unwrap();
 
-        let sock = s.get_mut(socket).unwrap();
-        sock.read(buf).unwrap()
-    })
+    let sock = s.get_mut(socket).unwrap();
+    sock.read(buf).unwrap()
 }
 
 #[no_mangle]
 #[cfg(feature = "channels")]
 pub extern fn ffi_get_channel(socket: usize, channel: u8) -> usize {
-    let chan = SOCKET.with(|cell| {
-        let mut s = cell.borrow_mut();
+    let mut s = SOCKET.lock().unwrap();
+    let sock = s.get_mut(socket).unwrap();
+    let chan = sock.get_channel(channel);
+    drop(s);
 
-        let sock = s.get_mut(socket).unwrap();
-        sock.get_channel(channel)
-    });
-
-    CHANNEL.with(|cell| {
-        let mut s = cell.borrow_mut();
-
-        s.push(chan);
-
-        s.len() - 1
-    })
+    let mut c = CHANNEL.lock().unwrap();
+    c.push(chan);
+    c.len() - 1
 }
 
 #[no_mangle]
 #[cfg(feature = "channels")]
-pub extern fn ffi_channel_loop(socket: usize) {
-    SOCKET.with(|cell| {
-        let mut s = cell.borrow_mut();
+pub extern fn ffi_channel_read_loop(socket: usize) {
+    let mut s = SOCKET.lock().unwrap();
 
-        let sock = s.get_mut(socket).unwrap();
-        block_on(sock.channel_read_loop());
-    });
+    let sock = s.get_mut(socket).unwrap();
+    block_on(sock.channel_read_loop()).unwrap();
+}
+
+#[no_mangle]
+#[cfg(feature = "channels")]
+pub extern fn ffi_channel_write_loop(socket: usize) {
+    let mut s = SOCKET.lock().unwrap();
+
+    let sock = s.get_mut(socket).unwrap();
+    block_on(sock.channel_write_loop()).unwrap();
 }
 
 #[no_mangle]
@@ -212,12 +208,10 @@ pub extern fn ffi_channel_loop(socket: usize) {
 pub extern fn ffi_send_channel(channel: usize, msg: *mut c_void, size: usize) -> usize {
     let buf = unsafe { from_raw_parts_mut(msg as *mut u8, size) };
 
-    CHANNEL.with(|cell| {
-        let mut s = cell.borrow_mut();
+    let mut c = CHANNEL.lock().unwrap();
 
-        let chan = s.get_mut(channel).unwrap();
-        chan.write(buf).unwrap()
-    })
+    let chan = c.get_mut(channel).unwrap();
+    chan.write(buf).unwrap()
 }
 
 #[no_mangle]
@@ -225,25 +219,21 @@ pub extern fn ffi_send_channel(channel: usize, msg: *mut c_void, size: usize) ->
 pub extern fn ffi_recv_channel(channel: usize, msg: *mut c_void, size: usize) -> usize {
     let buf = unsafe { from_raw_parts_mut(msg as *mut u8, size) };
 
-    CHANNEL.with(|cell| {
-        let mut s = cell.borrow_mut();
+    let mut c = CHANNEL.lock().unwrap();
 
-        let chan = s.get_mut(channel).unwrap();
-        chan.read(buf).unwrap()
-    })
+    let chan = c.get_mut(channel).unwrap();
+    chan.read(buf).unwrap()
 }
 
 fn new_socket(conn: Connection) -> usize {
-    SOCKET.with(move |cell| {
-        let mut s = cell.borrow_mut();
+    let mut s = SOCKET.lock().unwrap();
 
-        s.push(conn);
+    s.push(conn);
 
-        #[cfg(not(test))]
-        println!("New socket: {}", s.len() - 1);
+    #[cfg(not(test))]
+    println!("New socket: {}", s.len() - 1);
 
-        s.len() - 1  // len() is +1
-    })
+    s.len() - 1  // len() is +1
 }
 
 #[cfg(test)]
