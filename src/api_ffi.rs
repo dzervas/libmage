@@ -165,9 +165,7 @@ pub extern fn ffi_send(socket: usize, msg: *const c_void, size: usize) -> usize 
     let socket_locked = SOCKET.read().unwrap();
 
     let mut sock = socket_locked.get(socket).unwrap().write().unwrap();
-    let a = sock.write(buf).unwrap();
-    println!("I sent stuff!");
-    a
+    sock.write(buf).unwrap()
 }
 
 #[no_mangle]
@@ -177,9 +175,7 @@ pub extern fn ffi_recv(socket: usize, msg: *mut c_void, size: usize) -> usize {
     let socket_locked = SOCKET.read().unwrap();
 
     let mut sock = socket_locked.get(socket).unwrap().write().unwrap();
-    let a = sock.read(buf).unwrap();
-    println!("I got stuff!");
-    a
+    sock.read(buf).unwrap()
 }
 
 #[no_mangle]
@@ -216,9 +212,7 @@ pub extern fn ffi_send_channel(channel: usize, msg: *mut c_void, size: usize) ->
     let channel_locked = SOCKET.read().unwrap();
     let mut chan = channel_locked.get(channel).unwrap().write().unwrap();
 
-    let a = chan.write(buf).unwrap();
-    println!("I sent stuff! - C");
-    a
+    chan.write(buf).unwrap()
 }
 
 #[no_mangle]
@@ -229,9 +223,7 @@ pub extern fn ffi_recv_channel(channel: usize, msg: *mut c_void, size: usize) ->
     let channel_locked = SOCKET.read().unwrap();
     let mut chan = channel_locked.get(channel).unwrap().write().unwrap();
 
-    let a = chan.read(buf).unwrap();
-    println!("I got stuff! - C");
-    a
+    chan.read(buf).unwrap()
 }
 
 fn new_socket(conn: Connection) -> usize {

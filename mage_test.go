@@ -74,8 +74,6 @@ func TestListenConnect(t *testing.T) {
 	fmt.Println("\t[Go] Loop started")
 	go c.ChannelLoop()
 
-	// go ch.Read(buf)
-	// go c.ChannelLoop()
 	fmt.Println("\t[Go] Read")
 	ch.Read(buf)
 	fmt.Println("\t[Go] Write")

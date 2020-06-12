@@ -43,10 +43,8 @@ impl Connection {
     pub fn read_all_channels(&mut self) -> Result<HashMap<u8, Vec<u8>>> {
         let mut result: HashMap<u8, Vec<u8>> = HashMap::new();
 
-        println!("*Staring to nothingness...*");
         let original = self.rw.fill_buf()?;
         let size = original.len();
-        println!("I got the buffer, dechunking...");
 
         let packets = self.stream.dechunk(original)?;
 

@@ -11,7 +11,6 @@ pub struct Channel {
 
 impl Read for Channel {
     fn read(&mut self, mut buf: &mut [u8]) -> Result<usize> {
-        println!("Channel reading...");
         let r = match self.receiver.lock() {
             Ok(d) => d,
             Err(_e) => return Err(error_str!("Failed to lock `recv` Mutex by channel"))
@@ -26,7 +25,6 @@ impl Read for Channel {
 
 impl Write for Channel {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        println!("Channel writing...");
         let s = match self.sender.lock() {
             Ok(d) => d,
             Err(_e) => return Err(error_str!("Failed to lock `send` Mutex by channel"))
