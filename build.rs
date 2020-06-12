@@ -78,15 +78,15 @@ fn write_settings() {
     let port = url.port().unwrap();
 
     let mut f = File::create(SETTINGS_PATH).unwrap();
-    f.write_all(format!("
-use crate::transport::*;
+    f.write_all(format!(
+        "use crate::transport::*;
 
 pub type TRANSPORT = {};
 pub const LISTEN: bool = {};
 pub const ADDRESS: &str = \"{}:{}\";
 pub const SEED: &[u8] = &{:?};
-pub const REMOTE_KEY: &[u8] = &{:?};
-    ", transport, listen, host, port, seed, key).as_bytes()).unwrap();
+pub const REMOTE_KEY: &[u8] = &{:?};",
+transport, listen, host, port, seed, key).as_bytes()).unwrap();
 
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/settings.rs");

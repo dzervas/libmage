@@ -10,6 +10,7 @@ use crate::transport::ReadWrite;
 use {
     std::borrow::BorrowMut,
     std::io::{Error, ErrorKind},
+    std::sync::Mutex,
     std::sync::mpsc::{Sender, Receiver, channel as ch},
 
     crate::error_str,
@@ -20,8 +21,9 @@ pub struct Connection {
     pub id: u32,
     stream: Stream,
     rw: BufStream<Box<dyn ReadWrite>>,
+
     #[cfg(feature = "channels")]
-    channels: HashMap<u8, Vec<(Sender<Vec<u8>>, Receiver<Vec<u8>>)>>
+    channels: HashMap<u8, Vec<(Mutex<Sender<Vec<u8>>>, Mutex<Receiver<Vec<u8>>>)>>
 }
 
 impl Connection {
@@ -41,8 +43,10 @@ impl Connection {
     pub fn read_all_channels(&mut self) -> Result<HashMap<u8, Vec<u8>>> {
         let mut result: HashMap<u8, Vec<u8>> = HashMap::new();
 
+        println!("*Staring to nothingness...*");
         let original = self.rw.fill_buf()?;
         let size = original.len();
+        println!("I got the buffer, dechunking...");
 
         let packets = self.stream.dechunk(original)?;
 
@@ -73,12 +77,12 @@ impl Connection {
     pub fn get_channel(&mut self, channel: u8) -> Channel {
         let (from_ch, to_conn) = ch();
         let (from_conn, to_ch) = ch();
-        self.channels.entry(channel).or_insert_with(Vec::new).push((from_conn, to_conn));
+        self.channels.entry(channel).or_insert_with(Vec::new).push((Mutex::new(from_conn), Mutex::new(to_conn)));
         println!("New Channel {:?}", self.channels);
 
         Channel {
-            sender: from_ch,
-            receiver: to_ch,
+            sender: Mutex::new(from_ch),
+            receiver: Mutex::new(to_ch),
         }
     }
 
@@ -91,10 +95,14 @@ impl Connection {
             };
 
             for c in channels {
-                let r = c.0.send(data.clone());
+                let r = match c.0.lock() {
+                    Ok(d) => d.send(data.clone()),
+                    Err(_e) => return Err(error_str!("Failed to lock `send` Mutex for channel"))
+                };
                 if r.is_err() { return Err(error_str!("Unable to send message")); }
             }
         }
+        println!("Read all channels");
 
         // The data is first buffered to the HashMap buf and then sent
         // Can't call write_channel inside iter cause it's already borrowed
@@ -103,18 +111,25 @@ impl Connection {
         let mut buf: HashMap<u8, Vec<u8>> = HashMap::new();
 
         for (chan, receivers) in self.channels.iter() {
-            for (_, recv) in receivers {
-                if let Ok(d) = recv.try_recv() {
+            for (_send, recv) in receivers {
+                let r = match recv.lock() {
+                    Ok(d) => d,
+                    Err(_e) => return Err(error_str!("Failed to lock `send` Mutex for channel"))
+                };
+
+                if let Ok(d) = r.try_recv() {
                     buf.entry(*chan)
                         .or_insert_with(Vec::new)
                         .append(d.to_vec().borrow_mut())
                 }
             }
         }
+        println!("Read all data to channels");
 
         for (chan, data) in buf.iter() {
             self.write_channel(*chan, data.as_slice())?;
         }
+        println!("Sent all data to channels");
 
         Ok(())
     }
@@ -125,7 +140,7 @@ impl Read for Connection {
     fn read(&mut self, mut buf: &mut [u8]) -> Result<usize> {
         let dechunked = self.read_all_channels()?;
 
-        // Dunno how to hit "None"
+        // Dunno how to hit "None" in a test
         let bytes = match dechunked.get(&0u8) {
             Some(d) => d.as_slice(),
             None => &[]

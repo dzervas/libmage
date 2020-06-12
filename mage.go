@@ -2,9 +2,9 @@ package main
 
 // `cargo build --release --features ffi` to use this!
 
-// #cgo LDFLAGS: -Ltarget/release -lmage
-// #cgo CFLAGS: -Itarget/release
-// #include "mage.h"
+// #cgo LDFLAGS: -Ltarget/debug -lmage
+// #cgo CFLAGS: -Itarget/debug
+// #include "target/debug/mage.h"
 import "C"
 import (
 	"fmt"

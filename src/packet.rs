@@ -151,9 +151,9 @@ impl PacketConfig {
 fn bytes_to_u32(bytes: &[u8]) -> u32 {
 	let mut buf: u32 = 0;
 
-	for i in {0..bytes.len()} {
+	for byte in bytes.iter() {
 		buf <<= 8;
-		buf |= bytes[i] as u32;
+		buf |= *byte as u32;
 	}
 
 	buf

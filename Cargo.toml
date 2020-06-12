@@ -9,19 +9,22 @@ name = "mage"
 path = "src/lib.rs"
 crate-type = ["lib", "cdylib", "staticlib"]
 
-[[bin]]
-name = "mage"
-path = "src/bin.rs"
-required-features = ["tool"]
+# [[bin]]
+# name = "mage"
+# path = "src/bin.rs"
+# required-features = ["tool"]
 
 [dependencies]
 #std = {default-features=false, features=["panic_immediate_abort"]}
 bufstream = "*"
 sodiumoxide = "*"
 
+# FFI dependencies
+lazy_static = { version = "*", optional = true }
+
 # Binary (=tool feature) dependencies
 base64 = { version = "*", optional = true }
-may = { version = "*", optional = true }
+# may = { version = "*", optional = true }
 structopt = { version = "*", optional = true }
 url = { version = "*", optional = true }
 
@@ -35,10 +38,10 @@ url = "*"
 default = ["ffi", "trans_tcp"]
 
 channels = []
-ffi = []
+ffi = ["lazy_static"]
 
-#      |               Crates              |         Features         |
-tool = ["base64", "may", "structopt", "url", "channels", "trans_socks"]
+#      |         Crates             |         Features         |
+tool = ["base64", "structopt", "url", "channels", "trans_socks"]
 
 # Transports
 trans_tcp = []
