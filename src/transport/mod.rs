@@ -72,8 +72,8 @@ pub mod tests {
 
             let buffer = c2l_clone.borrow_mut();
 
-            rw.read(buffer).unwrap();
-            rw.write(l2c_clone.as_slice()).unwrap();
+            rw.read_exact(buffer).unwrap();
+            rw.write_all(l2c_clone.as_slice()).unwrap();
 
             assert_eq!(buffer.to_vec(), c2l_clone);
         });
@@ -83,8 +83,8 @@ pub mod tests {
 
         let buffer = l2c.as_mut();
 
-        rw.write(c2l.as_slice()).unwrap();
-        rw.read(buffer).unwrap();
+        rw.write_all(c2l.as_slice()).unwrap();
+        rw.read_exact(buffer).unwrap();
 
         assert_eq!(buffer.to_vec(), l2c);
 

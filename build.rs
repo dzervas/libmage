@@ -83,7 +83,7 @@ use crate::transport::*;
 
 pub type TRANSPORT = {};
 pub const LISTEN: bool = {};
-pub const ADDRESS: &'static str = \"{}:{}\";
+pub const ADDRESS: &str = \"{}:{}\";
 pub const SEED: &[u8] = &{:?};
 pub const REMOTE_KEY: &[u8] = &{:?};
     ", transport, listen, host, port, seed, key).as_bytes()).unwrap();

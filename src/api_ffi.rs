@@ -18,7 +18,7 @@ use crate::settings::*;
 type TRANSPORT = Tcp;
 
 #[cfg(test)]
-const ADDRESS: &'static str = "127.0.0.1:4444";
+const ADDRESS: &str = "127.0.0.1:4444";
 
 #[cfg(test)]
 macro_rules! const_test_connect {
@@ -74,9 +74,10 @@ fn _connect(addr: &str, listen: bool, seed: &[u8], key: &[u8]) -> usize {
 }
 
 #[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern fn ffi_connect_opt(addr: *const i8, listen: u8, seed: *const u8, key: *const u8) -> usize {
     let addr_str = unsafe { CStr::from_ptr(addr)}.to_str().unwrap();
-    let listen_bool = if listen != 0 { true } else { false };
+    let listen_bool = listen != 0;
     let seed_bytes = unsafe { from_raw_parts(seed, 32) };
     let key_bytes = unsafe { from_raw_parts(key, 32) };
 
@@ -107,6 +108,7 @@ fn _listen(addr: &str) -> usize {
 }
 
 #[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern fn ffi_listen_opt(addr: *const i8) -> usize {
     let addr_str = unsafe { CStr::from_ptr(addr)}.to_str().unwrap();
     _listen(addr_str)
@@ -130,8 +132,9 @@ fn _accept(socket: usize, listen: bool, seed: &[u8], key: &[u8]) -> usize {
 }
 
 #[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern fn ffi_accept_opt(socket: usize, listen: u8, seed: *const u8, key: *const u8) -> usize {
-    let listen_bool = if listen != 0 { true } else { false };
+    let listen_bool = listen != 0;
     let seed_bytes = unsafe { from_raw_parts(seed, 32) };
     let key_bytes = unsafe { from_raw_parts(key, 32) };
 

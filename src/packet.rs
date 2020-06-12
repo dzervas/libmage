@@ -65,6 +65,7 @@ pub struct PacketConfig {
 impl PacketConfig {
 	pub fn serialize(&self, id: u32, channel: u8, sequence: u32, data: &[u8]) -> Result<(Vec<u8>, usize)> {
 		// Hardcoded protocol version  vvv - only the left part should change! 0x10, 0x20...
+		#[allow(clippy::identity_op)] // This is to remind that 0x00 is the version and can be changed
 		let mut result: Vec<u8> = vec![0x00 | channel];
 
 		if channel > 0xF { return Err(error_str!("Field channel is more than 3 bytes. It must be 3 bytes (<=0xFFFFFF) max")) }
@@ -75,7 +76,7 @@ impl PacketConfig {
 			// (x as f64).log(0x100 as f64).ceil() as u8
 
             if !has { Ok(0) }
-			else if v > 0xFFFFFF { Err(error_str!("Field {} is more than 3 bytes. It must be 3 bytes (<=0xFFFFFF) max", field)) }
+			else if v > 0xFF_FFFF { Err(error_str!("Field {} is more than 3 bytes. It must be 3 bytes (<=0xFFFFFF) max", field)) }
 			else if v > 0xFFFF { Ok(3) }
 			else if v > 0xFF { Ok(2) }
 			else { Ok(1) }
@@ -99,15 +100,15 @@ impl PacketConfig {
 		result.push((id_len << 4) | (seq_len << 2) | data_len_len);
 
 		for i in (0..id_len).rev() {
-			result.push((id >> (i as u32)*8) as u8);
+			result.push((id >> ((i as u32)*8)) as u8);
 		}
 
 		for i in (0..seq_len).rev() {
-			result.push((sequence >> (i as u32)*8) as u8);
+			result.push((sequence >> ((i as u32)*8)) as u8);
 		}
 
 		for i in (0..data_len_len).rev() {
-			result.push((data_len as u32 >> (i as u32)*8) as u8);
+			result.push((data_len as u32 >> ((i as u32)*8)) as u8);
 		}
 
 		result.extend(&data[..data_len]);
@@ -118,7 +119,7 @@ impl PacketConfig {
 	pub fn deserialize(data: &[u8]) -> (Packet, Self, usize) {
 		let channel = data[0];
 
-		let id_len = (data[1] & 0b110000) >> 4;
+		let id_len = (data[1] & 0b11_0000) >> 4;
 		let seq_len = (data[1] & 0b1100) >> 2;
 		let data_len_len = data[1] & 0b11;
 		let offset = 2 + id_len + seq_len + data_len_len;
@@ -184,10 +185,10 @@ mod tests {
 		let (p4, _) = pc.serialize(0, 1, 7, &[2u8; 3]).unwrap();
 
 		// Test config overflows
-		assert!(pc.serialize(0x1FFFFFF, 1, 1, &[2u8; 1]).is_err(), "ID should be <= 3 bytes length (<=0xFFFFFF)");
+		assert!(pc.serialize(0x1FF_FFFF, 1, 1, &[2u8; 1]).is_err(), "ID should be <= 3 bytes length (<=0xFFFFFF)");
 		assert!(pc.serialize(1, 0x1F, 1, &[2u8; 1]).is_err(), "Channel should be <= 4 bits length (<=0xF)");
-		assert!(pc.serialize(1, 1, 0x1FFFFFF, &[2u8; 1]).is_err(), "Sequence should be <= 3 bytes length (<=0xFFFFFF)");
-		let (d, dl) = pc.serialize(1, 1, 1, &[2u8; 0x1FFFFFF]).unwrap();
+		assert!(pc.serialize(1, 1, 0x1FF_FFFF, &[2u8; 1]).is_err(), "Sequence should be <= 3 bytes length (<=0xFFFFFF)");
+		let (d, dl) = pc.serialize(1, 1, 1, &[2u8; 0x1FF_FFFF]).unwrap();
 		assert_eq!(d.len(), pc.max_size);
 		assert!(dl < pc.max_size, "Data Length should be <= 3 bytes length (<=0xFFFFFF)");
 
@@ -232,6 +233,6 @@ mod tests {
 	fn bytes_u32() {
 		assert_eq!(bytes_to_u32(vec![1].as_slice()), 1u32);
 		assert_eq!(bytes_to_u32(vec![0x10, 0xff].as_slice()), 0x10ff);
-		assert_eq!(bytes_to_u32(vec![0x12, 0x34, 0x56, 0x78].as_slice()), 0x12345678);
+		assert_eq!(bytes_to_u32(vec![0x12, 0x34, 0x56, 0x78].as_slice()), 0x1234_5678);
 	}
 }

@@ -5,3 +5,10 @@
 
 A tiny network protocol to be encapsulated in all kinds of transports.
 Wrap a meterpreter with it and forget all your communication problems!
+
+# Testing the Go binary
+
+```shell script
+cargo build --all-features --release
+ln 
+```

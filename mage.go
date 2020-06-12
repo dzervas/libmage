@@ -1,7 +1,6 @@
 package main
-import "C"
+
 // `cargo build --release --features ffi` to use this!
-// On linux `LD_LIBRARY_PATH=target/release`
 
 // #cgo LDFLAGS: -Ltarget/release -lmage
 // #cgo CFLAGS: -Itarget/release
@@ -24,7 +23,7 @@ func Listen(addr string) *Listener {
 
 	C.free(unsafe.Pointer(addrPtr))
 
-	return &Listener { index: i }
+	return &Listener{index: i}
 }
 
 func (l *Listener) Accept(seed [32]byte, key [32]byte) *Connection {
@@ -36,9 +35,8 @@ func (l *Listener) Accept(seed [32]byte, key [32]byte) *Connection {
 	i := C.ffi_accept_opt(l.index, 1, seedCharPtr, keyCharPtr)
 	fmt.Printf("[Go] New accept: %d\n", uint64(i))
 
-	return &Connection { index: i }
+	return &Connection{index: i}
 }
-
 
 type Connection struct {
 	index C.ulong
@@ -57,13 +55,13 @@ func Connect(addr string, seed [32]byte, key [32]byte) *Connection {
 
 	C.free(unsafe.Pointer(addrPtr))
 
-	return &Connection { index: i }
+	return &Connection{index: i}
 }
 
 func (c *Connection) GetChannel(i byte) *Channel {
 	r := C.ffi_get_channel(c.index, C.uchar(i))
 
-	return &Channel { index: r }
+	return &Channel{index: r}
 }
 
 func (c *Connection) ChannelLoop() {

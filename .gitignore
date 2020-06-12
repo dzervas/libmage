@@ -9,3 +9,4 @@ example/mage.h
 .mage-test.*
 src/settings.rs
 go.sum
+mage.h

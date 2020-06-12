@@ -43,15 +43,14 @@ impl Stream {
         let mut _push_bytes = [0u8; secretstream::KEYBYTES];
 
         // Compute session keys
-        if server {
-            let (rx, tx) = kx::server_session_keys(&keys.0, &keys.1, &remote_pkey).unwrap();
-            _pull_bytes = rx.0;
-            _push_bytes = tx.0;
+        let (rx, tx) = if server {
+            kx::server_session_keys(&keys.0, &keys.1, &remote_pkey).unwrap()
         } else {
-            let (rx, tx) = kx::client_session_keys(&keys.0, &keys.1, &remote_pkey).unwrap();
-            _pull_bytes = rx.0;
-            _push_bytes = tx.0;
-        }
+            kx::client_session_keys(&keys.0, &keys.1, &remote_pkey).unwrap()
+        };
+
+        _pull_bytes = rx.0;
+        _push_bytes = tx.0;
 
         let push_key = secretstream::Key::from_slice(&_push_bytes).unwrap();
         let pull_key = secretstream::Key::from_slice(&_pull_bytes).unwrap();
@@ -216,8 +215,8 @@ mod tests {
         test_stream_chunking(true, client.borrow_mut(), server.borrow_mut(), 13, 8, &[3u8; 4]);
         test_stream_chunking(true, server.borrow_mut(), client.borrow_mut(), 13, 8, &[3u8; 4]);
         client.data_len(false);
-        test_stream_chunking(false, server.borrow_mut(), client.borrow_mut(), 0x1FFFFFF, 8, &[4u8; 512]);
-        test_stream_chunking(false, server.borrow_mut(), client.borrow_mut(), 0x1FFFF, 0x1F, &[4u8; 512]);
+        test_stream_chunking(false, server.borrow_mut(), client.borrow_mut(), 0x1FF_FFFF, 8, &[4u8; 512]);
+        test_stream_chunking(false, server.borrow_mut(), client.borrow_mut(), 0x1_FFFF, 0x1F, &[4u8; 512]);
         client.sequence(false);
         test_stream_chunking(true, client.borrow_mut(), server.borrow_mut(), 13, 8, &[4u8; 512]);
         test_stream_chunking(true, server.borrow_mut(), client.borrow_mut(), 13, 8, &[4u8; 512]);
@@ -228,8 +227,7 @@ mod tests {
         let chunked = match a.chunk(id, ch, &data) {
             Ok(c) => c,
             Err(_e) => {
-                if succ { return assert!(false, "Chunk should have been created!"); }
-                else { return; }
+                return assert!(succ, "Chunk should have been created!");
             }
         };
         let mut aligned: Vec<u8> = Vec::new();
@@ -242,8 +240,7 @@ mod tests {
         let dechunked = match b.dechunk(aligned.as_slice()) {
             Ok(d) => d,
             Err(_e) => {
-                if succ { return assert!(false, "Chunk should have been dechunked!"); }
-                else { return; }
+                return assert!(succ, "Chunk should have been created!");
             }
         };
 
