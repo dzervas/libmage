@@ -164,8 +164,8 @@ mod tests {
     use super::*;
     use std::fs::{File, OpenOptions};
     use std::borrow::BorrowMut;
-    // use std::thread::{sleep, spawn};
-    // use std::time::Duration;
+    use std::thread::{sleep, spawn};
+    use std::time::Duration;
 
     // Known keys: vec![1; 32] -> public vec![171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111]
     // Known keys: vec![2; 32] -> public vec![252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6]
@@ -263,24 +263,21 @@ mod tests {
         match a.write(data) {
             Ok(_d) => {},
             Err(_e) => {
-                assert!(succ, "Write should be successful");
-                return;
+                return assert!(!succ, "Write should be successful");
             }
         };
 
         match a.flush() {
             Ok(_d) => {},
             Err(_e) => {
-                assert!(succ, "Write should be successful");
-                return;
+                return assert!(!succ, "Write should be successful");
             }
         };
 
         let r = match b.read(&mut buf) {
             Ok(d) => d,
             Err(_e) => {
-                assert!(succ, "Write should be successful");
-                return;
+                return assert!(!succ, "Write should be successful");
             }
         };
 

@@ -227,7 +227,7 @@ mod tests {
         let chunked = match a.chunk(id, ch, &data) {
             Ok(c) => c,
             Err(_e) => {
-                return assert!(succ, "Chunk should have been created!");
+                return assert!(!succ, "Chunk should have been created!");
             }
         };
         let mut aligned: Vec<u8> = Vec::new();
@@ -240,7 +240,7 @@ mod tests {
         let dechunked = match b.dechunk(aligned.as_slice()) {
             Ok(d) => d,
             Err(_e) => {
-                return assert!(succ, "Chunk should have been created!");
+                return assert!(!succ, "Chunk should have been created!");
             }
         };
 
