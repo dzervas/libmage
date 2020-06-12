@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func HelpListen(t *testing.T) {
+func HelpListen(t *testing.T, finished chan bool) {
 	fmt.Println("[Go] Listening")
 	l := Listen("127.0.0.1:5555")
 	fmt.Println("[Go] Accepting")
@@ -36,9 +36,12 @@ func HelpListen(t *testing.T) {
 	ch.Write([]byte("hoho!"))
 	fmt.Println("\t[Go] (L) Reading")
 	ch.Read(buf)
-	if string(buf) != "haha!" {
-		t.Errorf("buf should be 'haha!', but it's '%s'", buf)
+	if string(buf) != "hoho!" {
+		t.Errorf("buf should be 'hoho!', but it's '%s'", buf)
 	}
+
+	fmt.Println("end")
+	finished <- true
 }
 
 func HelpConnect(t *testing.T) *Connection {
@@ -64,20 +67,24 @@ func HelpConnect(t *testing.T) *Connection {
 }
 
 func TestListenConnect(t *testing.T) {
-	go HelpListen(t)
-	time.Sleep(100 * time.Millisecond)
+	listen_finish := make(chan bool)
+	go HelpListen(t, listen_finish)
+	time.Sleep(time.Second) // Wait for listener to start
 	c := HelpConnect(t)
 
 	ch := c.GetChannel(5) // 0 is the default used channel
 	buf := []byte("haha!")
 
-	fmt.Println("\t[Go] Loop started")
-	go c.ChannelLoop()
-
 	fmt.Println("\t[Go] Read")
 	ch.Read(buf)
 	fmt.Println("\t[Go] Write")
 	ch.Write(buf)
+
+	fmt.Println("\t[Go] Loop started")
+	time.Sleep(100 * time.Millisecond) // Wait for channel loop to start
+	go c.ChannelLoop()
+
+	<-listen_finish
 
 	if string(buf) != "hoho!" {
 		t.Errorf("buf should be 'hoho!', but it's '%s'", buf)
