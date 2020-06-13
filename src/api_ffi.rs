@@ -71,6 +71,7 @@ lazy_static! {
 
 // TODO: Handle all panics - not supported by FFI, undefined behaviour
 
+// Helper functions
 fn _connect(addr: &str, listen: bool, seed: &[u8], key: &[u8]) -> usize {
     let new_conn = TRANSPORT::connect(addr).unwrap();
 
@@ -79,6 +80,46 @@ fn _connect(addr: &str, listen: bool, seed: &[u8], key: &[u8]) -> usize {
     new_socket(conn)
 }
 
+fn _listen(addr: &str) -> usize {
+    let new_accept = TRANSPORT::listen(addr).unwrap();
+
+    let mut accept_locked = ACCEPT.write().unwrap();
+
+    accept_locked.push(RwLock::new(new_accept));
+
+    #[cfg(not(test))]
+    println!("New listener: {}", accept_locked.len() - 1);
+
+    accept_locked.len() - 1  // len() is +1
+}
+
+fn _accept(socket: usize, listen: bool, seed: &[u8], key: &[u8]) -> usize {
+    let accept_locked = ACCEPT.read().unwrap();
+    let accepted = {
+
+        // This unwraping is getting out of hand
+        accept_locked.get(socket as usize).unwrap()
+            .read().unwrap()
+            .accept().unwrap()
+    };
+
+    let conn = Connection::new(0, accepted, listen, seed, key).unwrap();
+
+    new_socket(conn)
+}
+
+fn new_socket(conn: Connection) -> usize {
+    let mut socket_locked = SOCKET.write().unwrap();
+
+    socket_locked.push(RwLock::new(conn));
+
+    #[cfg(not(test))]
+    println!("New socket: {}", socket_locked.len() - 1);
+
+    socket_locked.len() - 1  // len() is +1
+}
+
+// FFI API - Connection initialization
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern fn ffi_connect_opt(addr: *const i8, listen: u8, seed: *const u8, key: *const u8) -> usize {
@@ -98,19 +139,6 @@ pub extern fn ffi_connect() -> usize {
     _connect(ADDRESS, LISTEN, SEED, REMOTE_KEY)
 }
 
-fn _listen(addr: &str) -> usize {
-    let new_accept = TRANSPORT::listen(addr).unwrap();
-
-    let mut accept_locked = ACCEPT.write().unwrap();
-
-    accept_locked.push(RwLock::new(new_accept));
-
-    #[cfg(not(test))]
-    println!("New listener: {}", accept_locked.len() - 1);
-
-    accept_locked.len() - 1  // len() is +1
-}
-
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern fn ffi_listen_opt(addr: *const i8) -> usize {
@@ -121,21 +149,6 @@ pub extern fn ffi_listen_opt(addr: *const i8) -> usize {
 #[no_mangle]
 pub extern fn ffi_listen() -> usize {
     _listen(ADDRESS)
-}
-
-fn _accept(socket: usize, listen: bool, seed: &[u8], key: &[u8]) -> usize {
-    let accept_locked = ACCEPT.read().unwrap();
-    let accepted = {
-
-        // This unwraping is getting out of hand
-        accept_locked.get(socket as usize).unwrap()
-            .read().unwrap()
-            .accept().unwrap()
-    };
-
-    let conn = Connection::new(0, accepted, listen, seed, key).unwrap();
-
-    new_socket(conn)
 }
 
 #[no_mangle]
@@ -156,6 +169,7 @@ pub extern fn ffi_accept(socket: usize) -> usize {
     _accept(socket, LISTEN, SEED, REMOTE_KEY)
 }
 
+// FFI API - Simple data transfer interface
 #[no_mangle]
 pub extern fn ffi_send(socket: usize, msg: *const c_void, size: usize) -> usize {
     // TODO: Use snappy compress https://doc.rust-lang.org/nomicon/ffi.html#creating-a-safe-interface to ensure safety of given buffers
@@ -178,6 +192,7 @@ pub extern fn ffi_recv(socket: usize, msg: *mut c_void, size: usize) -> usize {
     sock.read(buf).unwrap()
 }
 
+// FFI API - Channel handling interface
 #[no_mangle]
 #[cfg(feature = "channels")]
 pub extern fn ffi_get_channel(socket: usize, channel: u8) -> usize {
@@ -204,6 +219,7 @@ pub extern fn ffi_channel_loop(socket: usize) {
     sock.channel_loop().unwrap();
 }
 
+// FFI API - Channel data transfer interface
 #[no_mangle]
 #[cfg(feature = "channels")]
 pub extern fn ffi_send_channel(channel: usize, msg: *mut c_void, size: usize) -> usize {
@@ -226,17 +242,6 @@ pub extern fn ffi_recv_channel(channel: usize, msg: *mut c_void, size: usize) ->
     chan.read(buf).unwrap()
 }
 
-fn new_socket(conn: Connection) -> usize {
-    let mut socket_locked = SOCKET.write().unwrap();
-
-    socket_locked.push(RwLock::new(conn));
-
-    #[cfg(not(test))]
-    println!("New socket: {}", socket_locked.len() - 1);
-
-    socket_locked.len() - 1  // len() is +1
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,7 +260,7 @@ mod tests {
             test_listening()
         });
 
-        sleep(Duration::from_millis(100));
+        sleep(Duration::from_millis(1000));
         test_connecting();
         assert!(thread.join().is_ok(), "Thread panicked!");
     }
