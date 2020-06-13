@@ -1,4 +1,4 @@
-use std::sync::mpsc::{Sender, Receiver};
+use std::sync::mpsc::{Receiver, Sender};
 
 pub fn bridge(sender: Sender<Vec<u8>>, receiver: Receiver<Vec<u8>>, i: &'static str) {
     println!("[{}] Starting bridge loop {:?}, {:?}", i, sender, receiver);

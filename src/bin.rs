@@ -2,18 +2,18 @@ extern crate base64;
 extern crate bufstream;
 extern crate structopt;
 
-use std::io::{BufRead, Write, Read};
+use std::io::{BufRead, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 
+use mage::connection::Connection;
 use mage::tool::{key, Address};
 use mage::transport::*;
-use mage::connection::Connection;
 
-use structopt::StructOpt;
 use bufstream::BufStream;
+use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "mage")]
@@ -75,7 +75,7 @@ enum Command {
         /// Ex.: -lp 4444 127.0.0.1 on machine with the browser
         /// Ex.: -p 4444 some-server.com on machine with access to the server
         proxy_addr: String,
-    }
+    },
 }
 
 fn main() {
@@ -91,7 +91,6 @@ fn main() {
 
     match opts.cmds {
         Command::Key { gen, armor, output } => {
-
             if gen && seed.is_empty() {
                 seed = key::generate_seed();
             } else if seed.is_empty() {
@@ -112,12 +111,23 @@ fn main() {
                     if armor {
                         let seed_str = String::from_utf8(seed).unwrap();
                         let public_key_str = String::from_utf8(public_key).unwrap();
-                        println!("Keypair Seed:\t{}\nPublic Key:\t{}", seed_str, public_key_str)
-                    } else { println!("Keypair Seed:\t{:?}\nPublic Key:\t{:?}", seed, public_key) }
+                        println!(
+                            "Keypair Seed:\t{}\nPublic Key:\t{}",
+                            seed_str, public_key_str
+                        )
+                    } else {
+                        println!("Keypair Seed:\t{:?}\nPublic Key:\t{:?}", seed, public_key)
+                    }
                 }
             }
         }
-        Command::Proxy { address, public_key, proxy_listen, proxy_port, proxy_addr } => {
+        Command::Proxy {
+            address,
+            public_key,
+            proxy_listen,
+            proxy_port,
+            proxy_addr,
+        } => {
             let mage_addr = Address::parse(address);
             let host_port = format!("{}:{}", mage_addr.host, mage_addr.port);
 
@@ -126,17 +136,26 @@ fn main() {
             // TODO: This is temporary - select transport on runtime
             let conn = if mage_addr.listen {
                 let listener = Tcp::listen(host_port).unwrap();
-//                println!("Listening for mage connection at {} over Tcp", host_port);
+                //                println!("Listening for mage connection at {} over Tcp", host_port);
                 listener.accept().unwrap()
             } else {
-//                println!("Mage connecting to {} over Tcp", host_port);
+                //                println!("Mage connecting to {} over Tcp", host_port);
                 Tcp::connect(host_port).unwrap()
             };
 
             println!("Mage connection opened! Spawning communication thread");
             // While it's wrong to assume that if we listen we're server,
             // it's safe to assume and it's just about the proxy tool
-            let mut connection = Box::new(Connection::new(0, Box::new(conn), mage_addr.listen, seed.as_slice(), remote_key.as_slice()).unwrap());
+            let mut connection = Box::new(
+                Connection::new(
+                    0,
+                    Box::new(conn),
+                    mage_addr.listen,
+                    seed.as_slice(),
+                    remote_key.as_slice(),
+                )
+                .unwrap(),
+            );
             println!("AAA");
 
             let mut proxy_conn = if proxy_listen {

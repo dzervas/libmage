@@ -6,7 +6,7 @@ macro_rules! enable_transport {
         mod $trans;
         #[cfg(feature = $feature)]
         pub use self::$trans::*;
-    }
+    };
 }
 
 // Transport definition
@@ -33,7 +33,7 @@ pub trait Listener: Sized + Send {
     // TODO: Add some kind of address struct?
     fn accept(&self) -> Result<Box<dyn ReadWrite>>;
     // TODO: Make the damn iterator work
-//    fn incoming(&self) -> dyn Iterator<Item=i32>;
+    //    fn incoming(&self) -> dyn Iterator<Item=i32>;
 }
 
 pub trait Connector: Sized + Send {
@@ -46,23 +46,28 @@ impl<T: Listener + Connector + Sized + Send> Transport for T {}
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use std::thread::{spawn, sleep};
-    use std::time::Duration;
     use std::borrow::BorrowMut;
+    use std::thread::{sleep, spawn};
+    use std::time::Duration;
 
     #[macro_export]
     macro_rules! assert_cond {
         ($succ: expr, $func: expr) => {
             match $func {
                 Ok(d) => d,
-                Err(e) => return assert!($succ, e.to_string())
+                Err(e) => return assert!($succ, e.to_string()),
             };
-        }
+        };
     }
 
     // Test listen, accept, connect
     #[cfg_attr(tarpaulin, skip)]
-    pub fn test_listen_conn_inner<T: Transport>(succ: bool, addr: &'static str, c2l: Vec<u8>, mut l2c: Vec<u8>) {
+    pub fn test_listen_conn_inner<T: Transport>(
+        succ: bool,
+        addr: &'static str,
+        c2l: Vec<u8>,
+        mut l2c: Vec<u8>,
+    ) {
         let mut c2l_clone = c2l.clone();
         let l2c_clone = l2c.clone();
 
@@ -99,13 +104,28 @@ pub mod tests {
 
             #[test]
             fn $name() {
-                test_listen_conn_inner::<$t>(true, concat!("127.0.0.1:", $port), vec![1; 10], vec![4; 10]);
-                test_listen_conn_inner::<$t>(true, concat!("127.0.0.1:", $port), vec![1; 512], vec![4; 512]);
-                test_listen_conn_inner::<$t>(true, concat!("127.0.0.1:", $port), vec![1; 10000], vec![4; 10000]);
+                test_listen_conn_inner::<$t>(
+                    true,
+                    concat!("127.0.0.1:", $port),
+                    vec![1; 10],
+                    vec![4; 10],
+                );
+                test_listen_conn_inner::<$t>(
+                    true,
+                    concat!("127.0.0.1:", $port),
+                    vec![1; 512],
+                    vec![4; 512],
+                );
+                test_listen_conn_inner::<$t>(
+                    true,
+                    concat!("127.0.0.1:", $port),
+                    vec![1; 10000],
+                    vec![4; 10000],
+                );
                 // These block (duh...)
-//                test_listen_conn_inner::<$t>(true, ("127.0.0.1", $port), vec![], vec![4; 10]);
-//                test_listen_conn_inner::<$t>(true, ("127.0.0.1", $port), vec![100; 10000], vec![]);
+                //                test_listen_conn_inner::<$t>(true, ("127.0.0.1", $port), vec![], vec![4; 10]);
+                //                test_listen_conn_inner::<$t>(true, ("127.0.0.1", $port), vec![100; 10000], vec![]);
             }
-        }
+        };
     }
 }

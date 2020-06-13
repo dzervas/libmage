@@ -27,16 +27,16 @@ impl Address {
 
         let transport = scheme_parts.get(0).unwrap().to_string();
 
-//        let transport: T;
-//        if transport_str == &"Tcp" {
-//            transport = Tcp;
-//        }
+        //        let transport: T;
+        //        if transport_str == &"Tcp" {
+        //            transport = Tcp;
+        //        }
 
         Address {
             transport,
             listen,
             host,
-            port
+            port,
         }
     }
 }

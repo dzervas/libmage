@@ -1,5 +1,5 @@
-use std::io::{Read, Write, BufRead, Result};
 use std::collections::HashMap;
+use std::io::{BufRead, Read, Result, Write};
 
 use bufstream::BufStream;
 
@@ -8,13 +8,12 @@ use crate::transport::ReadWrite;
 
 #[cfg(feature = "channels")]
 use {
+    crate::channel::Channel,
+    crate::error_str,
     std::borrow::BorrowMut,
     std::io::{Error, ErrorKind},
+    std::sync::mpsc::{channel as ch, Receiver, Sender},
     std::sync::Mutex,
-    std::sync::mpsc::{Sender, Receiver, channel as ch},
-
-    crate::error_str,
-    crate::channel::Channel,
 };
 
 pub struct Connection {
@@ -23,20 +22,26 @@ pub struct Connection {
     rw: BufStream<Box<dyn ReadWrite>>,
 
     #[cfg(feature = "channels")]
-    channels: HashMap<u8, Vec<(Mutex<Sender<Vec<u8>>>, Mutex<Receiver<Vec<u8>>>)>>
+    channels: HashMap<u8, Vec<(Mutex<Sender<Vec<u8>>>, Mutex<Receiver<Vec<u8>>>)>>,
 }
 
 impl Connection {
-    pub fn new(id: u32, rw: Box<dyn ReadWrite>, server: bool, seed: &[u8], remote_key: &[u8]) -> Result<Self> {
+    pub fn new(
+        id: u32,
+        rw: Box<dyn ReadWrite>,
+        server: bool,
+        seed: &[u8],
+        remote_key: &[u8],
+    ) -> Result<Self> {
         match Stream::new(server, seed, remote_key) {
             Ok(stream) => Ok(Connection {
                 id,
                 stream,
                 rw: BufStream::new(rw),
                 #[cfg(feature = "channels")]
-                channels: HashMap::new()
+                channels: HashMap::new(),
             }),
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
 
@@ -56,7 +61,10 @@ impl Connection {
         // self.rw.consume(size);
 
         for p in packets {
-            result.entry(p.get_channel()).or_insert_with(Vec::new).extend(p.data);
+            result
+                .entry(p.get_channel())
+                .or_insert_with(Vec::new)
+                .extend(p.data);
         }
 
         Ok(result)
@@ -80,7 +88,10 @@ impl Connection {
     pub fn get_channel(&mut self, channel: u8) -> Channel {
         let (from_ch, to_conn) = ch();
         let (from_conn, to_ch) = ch();
-        self.channels.entry(channel).or_insert_with(Vec::new).push((Mutex::new(from_conn), Mutex::new(to_conn)));
+        self.channels
+            .entry(channel)
+            .or_insert_with(Vec::new)
+            .push((Mutex::new(from_conn), Mutex::new(to_conn)));
         println!("New Channel {:?}", self.channels);
 
         Channel {
@@ -105,15 +116,17 @@ impl Connection {
             println!("Looping");
             let channels = match self.channels.get(chan) {
                 Some(d) => d,
-                None => continue
+                None => continue,
             };
 
             for c in channels {
                 let r = match c.0.lock() {
                     Ok(d) => d.send(data.clone()),
-                    Err(_e) => return Err(error_str!("Failed to lock `send` Mutex for channel"))
+                    Err(_e) => return Err(error_str!("Failed to lock `send` Mutex for channel")),
                 };
-                if r.is_err() { return Err(error_str!("Unable to send message")); }
+                if r.is_err() {
+                    return Err(error_str!("Unable to send message"));
+                }
             }
         }
         println!("Read all channels");
@@ -133,7 +146,7 @@ impl Connection {
             for (_send, recv) in receivers {
                 let r = match recv.lock() {
                     Ok(d) => d,
-                    Err(_e) => return Err(error_str!("Failed to lock `send` Mutex for channel"))
+                    Err(_e) => return Err(error_str!("Failed to lock `send` Mutex for channel")),
                 };
 
                 if let Ok(d) = r.try_recv() {
@@ -154,7 +167,10 @@ impl Connection {
     }
 }
 
-#[deprecated(since="0.1.0", note="Please use `read_all_channels` or `channel_loop` with `get_channel`")]
+#[deprecated(
+    since = "0.1.0",
+    note = "Please use `read_all_channels` or `channel_loop` with `get_channel`"
+)]
 impl Read for Connection {
     fn read(&mut self, mut buf: &mut [u8]) -> Result<usize> {
         let dechunked = self.read_all_channels()?;
@@ -162,14 +178,17 @@ impl Read for Connection {
         // Dunno how to hit "None" in a test
         let bytes = match dechunked.get(&0u8) {
             Some(d) => d.as_slice(),
-            None => &[]
+            None => &[],
         };
 
         buf.write(bytes)
     }
 }
 
-#[deprecated(since="0.1.0", note="Please use `write_channel` or `channel_loop` with `get_channel`")]
+#[deprecated(
+    since = "0.1.0",
+    note = "Please use `write_channel` or `channel_loop` with `get_channel`"
+)]
 impl Write for Connection {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
         self.write_channel(0, buf)
@@ -183,8 +202,8 @@ impl Write for Connection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::{File, OpenOptions};
     use std::borrow::BorrowMut;
+    use std::fs::{File, OpenOptions};
     use std::thread::{sleep, spawn};
     use std::time::Duration;
 
@@ -201,15 +220,95 @@ mod tests {
     fn new() {
         let file = File::create(TEST_FILE_PATH).unwrap();
 
-        assert!(Connection::new(10, Box::new(file.try_clone().unwrap()), true, &[1; 32], &[2; 32]).is_ok(), "Can't create dummy connection");
-        assert!(Connection::new(10, Box::new(file.try_clone().unwrap()), true, &[1; 31], &[2; 32]).is_err(), "Key seed is too small, must be 32 bytes");
-        assert!(Connection::new(10, Box::new(file.try_clone().unwrap()), true, &[1; 33], &[2; 32]).is_err(), "Key seed is too big, must be 32 bytes");
-        assert!(Connection::new(10, Box::new(file.try_clone().unwrap()), true, &[1; 32], &[2; 31]).is_err(), "Remote key is too small, must be 32 bytes");
-        assert!(Connection::new(10, Box::new(file.try_clone().unwrap()), true, &[1; 32], &[2; 33]).is_err(), "Remote key is too big, must be 32 bytes");
-//        assert!(Connection::new(0x1FFFFFF, Box::new(file.try_clone().unwrap()), &mut rw, true, &[1; 32], &[2; 32]).is_err(), "ID is longer than 3 bytes");
-        assert!(Connection::new(0xFF_FFFF, Box::new(file.try_clone().unwrap()), true, &[1; 32], &[2; 32]).is_ok(), "Can't create dummy connection");
-        assert!(Connection::new(0xFF, Box::new(file.try_clone().unwrap()), true, &[1; 32], &[2; 32]).is_ok(), "Can't create dummy connection");
-        assert!(Connection::new(0, Box::new(file.try_clone().unwrap()), true, &[1; 32], &[2; 32]).is_ok(), "Can't create dummy connection");
+        assert!(
+            Connection::new(
+                10,
+                Box::new(file.try_clone().unwrap()),
+                true,
+                &[1; 32],
+                &[2; 32]
+            )
+            .is_ok(),
+            "Can't create dummy connection"
+        );
+        assert!(
+            Connection::new(
+                10,
+                Box::new(file.try_clone().unwrap()),
+                true,
+                &[1; 31],
+                &[2; 32]
+            )
+            .is_err(),
+            "Key seed is too small, must be 32 bytes"
+        );
+        assert!(
+            Connection::new(
+                10,
+                Box::new(file.try_clone().unwrap()),
+                true,
+                &[1; 33],
+                &[2; 32]
+            )
+            .is_err(),
+            "Key seed is too big, must be 32 bytes"
+        );
+        assert!(
+            Connection::new(
+                10,
+                Box::new(file.try_clone().unwrap()),
+                true,
+                &[1; 32],
+                &[2; 31]
+            )
+            .is_err(),
+            "Remote key is too small, must be 32 bytes"
+        );
+        assert!(
+            Connection::new(
+                10,
+                Box::new(file.try_clone().unwrap()),
+                true,
+                &[1; 32],
+                &[2; 33]
+            )
+            .is_err(),
+            "Remote key is too big, must be 32 bytes"
+        );
+        //        assert!(Connection::new(0x1FFFFFF, Box::new(file.try_clone().unwrap()), &mut rw, true, &[1; 32], &[2; 32]).is_err(), "ID is longer than 3 bytes");
+        assert!(
+            Connection::new(
+                0xFF_FFFF,
+                Box::new(file.try_clone().unwrap()),
+                true,
+                &[1; 32],
+                &[2; 32]
+            )
+            .is_ok(),
+            "Can't create dummy connection"
+        );
+        assert!(
+            Connection::new(
+                0xFF,
+                Box::new(file.try_clone().unwrap()),
+                true,
+                &[1; 32],
+                &[2; 32]
+            )
+            .is_ok(),
+            "Can't create dummy connection"
+        );
+        assert!(
+            Connection::new(
+                0,
+                Box::new(file.try_clone().unwrap()),
+                true,
+                &[1; 32],
+                &[2; 32]
+            )
+            .is_ok(),
+            "Can't create dummy connection"
+        );
     }
 
     #[test]
@@ -224,14 +323,14 @@ mod tests {
         let mut buf = [5; 10];
         assert_eq!(conn2.read(&mut buf).unwrap(), 0);
         // These pollute the buffers!
-//        test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[7; 100000]);
-//        test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[7; 100000]);
+        //        test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[7; 100000]);
+        //        test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[7; 100000]);
 
         #[cfg(feature = "channels")]
         test_channels(conn, conn2);
     }
 
-//    #[test]
+    //    #[test]
     #[cfg(feature = "channels")]
     fn test_channels(mut conn: Connection, mut conn2: Connection) {
         let mut chan = conn.get_channel(4);
@@ -243,13 +342,23 @@ mod tests {
         let thread = spawn(move || {
             test_rw(true, chan.borrow_mut(), chan2.borrow_mut(), &[7; 100]);
             test_rw(true, chan2.borrow_mut(), chan.borrow_mut(), &[7; 100]);
-            test_rw(true, chan_other.borrow_mut(), chan2_other.borrow_mut(), &[7; 100]);
-            test_rw(true, chan2_other.borrow_mut(), chan_other.borrow_mut(), &[7; 100]);
+            test_rw(
+                true,
+                chan_other.borrow_mut(),
+                chan2_other.borrow_mut(),
+                &[7; 100],
+            );
+            test_rw(
+                true,
+                chan2_other.borrow_mut(),
+                chan_other.borrow_mut(),
+                &[7; 100],
+            );
             // TODO: Find a way to test blocking channels
-//            test_rw(false, chan_other.borrow_mut(), chan2_other.borrow_mut(), &[7; 100000]);
-//            test_rw(false, chan2_other.borrow_mut(), chan_other.borrow_mut(), &[7; 100000]);
-//            test_rw(false, chan.borrow_mut(), chan2_other.borrow_mut(), &[7; 100]);
-//            test_rw(false, chan2_other.borrow_mut(), chan.borrow_mut(), &[7; 100]);
+            //            test_rw(false, chan_other.borrow_mut(), chan2_other.borrow_mut(), &[7; 100000]);
+            //            test_rw(false, chan2_other.borrow_mut(), chan_other.borrow_mut(), &[7; 100000]);
+            //            test_rw(false, chan.borrow_mut(), chan2_other.borrow_mut(), &[7; 100]);
+            //            test_rw(false, chan2_other.borrow_mut(), chan.borrow_mut(), &[7; 100]);
         });
 
         // I see no other way than sleep.
@@ -267,11 +376,40 @@ mod tests {
 
     #[cfg_attr(tarpaulin, skip)]
     fn connection_prelude() -> (Connection, Connection) {
-        let file = OpenOptions::new().read(true).write(true).create(true).open(TEST_FILE_PATH).unwrap();
-        let conn = Connection::new(0xFFFF, Box::new(file.try_clone().unwrap()), false, &[1; 32], &[252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6]).unwrap();
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(TEST_FILE_PATH)
+            .unwrap();
+        let conn = Connection::new(
+            0xFFFF,
+            Box::new(file.try_clone().unwrap()),
+            false,
+            &[1; 32],
+            &[
+                252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129,
+                123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6,
+            ],
+        )
+        .unwrap();
 
-        let file2 = OpenOptions::new().read(true).write(true).open(TEST_FILE_PATH).unwrap();
-        let conn2 = Connection::new(0xFFFF, Box::new(file2.try_clone().unwrap()), true, &[2; 32], &[171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111]).unwrap();
+        let file2 = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(TEST_FILE_PATH)
+            .unwrap();
+        let conn2 = Connection::new(
+            0xFFFF,
+            Box::new(file2.try_clone().unwrap()),
+            true,
+            &[2; 32],
+            &[
+                171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85,
+                198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111,
+            ],
+        )
+        .unwrap();
 
         (conn, conn2)
     }
@@ -282,14 +420,14 @@ mod tests {
 
         // Should be always ok to write & flush
         match a.write(data) {
-            Ok(_d) => {},
+            Ok(_d) => {}
             Err(_e) => {
                 return assert!(!succ, "Write should be successful");
             }
         };
 
         match a.flush() {
-            Ok(_d) => {},
+            Ok(_d) => {}
             Err(_e) => {
                 return assert!(!succ, "Write should be successful");
             }
@@ -302,7 +440,10 @@ mod tests {
             }
         };
 
-        if succ { assert_eq!(&buf[..r], data); }
-        else { assert_ne!(&buf[..r], data); }
+        if succ {
+            assert_eq!(&buf[..r], data);
+        } else {
+            assert_ne!(&buf[..r], data);
+        }
     }
 }

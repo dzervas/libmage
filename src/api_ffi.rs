@@ -28,7 +28,10 @@ macro_rules! const_test_connect {
     () => {
         const LISTEN: bool = false;
         const SEED: &[u8] = &[1; 32];
-        const REMOTE_KEY: &[u8] = &[252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6];
+        const REMOTE_KEY: &[u8] = &[
+            252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129,
+            123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6,
+        ];
     };
 }
 
@@ -37,7 +40,10 @@ macro_rules! const_test_listen {
     () => {
         const LISTEN: bool = true;
         const SEED: &[u8] = &[2; 32];
-        const REMOTE_KEY: &[u8] = &[171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111];
+        const REMOTE_KEY: &[u8] = &[
+            171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198,
+            67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111,
+        ];
     };
 }
 
@@ -90,17 +96,20 @@ fn _listen(addr: &str) -> usize {
     #[cfg(not(test))]
     println!("New listener: {}", accept_locked.len() - 1);
 
-    accept_locked.len() - 1  // len() is +1
+    accept_locked.len() - 1 // len() is +1
 }
 
 fn _accept(socket: usize, listen: bool, seed: &[u8], key: &[u8]) -> usize {
     let accept_locked = ACCEPT.read().unwrap();
     let accepted = {
-
         // This unwraping is getting out of hand
-        accept_locked.get(socket as usize).unwrap()
-            .read().unwrap()
-            .accept().unwrap()
+        accept_locked
+            .get(socket as usize)
+            .unwrap()
+            .read()
+            .unwrap()
+            .accept()
+            .unwrap()
     };
 
     let conn = Connection::new(0, accepted, listen, seed, key).unwrap();
@@ -116,14 +125,19 @@ fn new_socket(conn: Connection) -> usize {
     #[cfg(not(test))]
     println!("New socket: {}", socket_locked.len() - 1);
 
-    socket_locked.len() - 1  // len() is +1
+    socket_locked.len() - 1 // len() is +1
 }
 
 // FFI API - Connection initialization
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern fn ffi_connect_opt(addr: *const i8, listen: u8, seed: *const u8, key: *const u8) -> usize {
-    let addr_str = unsafe { CStr::from_ptr(addr)}.to_str().unwrap();
+pub extern "C" fn ffi_connect_opt(
+    addr: *const i8,
+    listen: u8,
+    seed: *const u8,
+    key: *const u8,
+) -> usize {
+    let addr_str = unsafe { CStr::from_ptr(addr) }.to_str().unwrap();
     let listen_bool = listen != 0;
     let seed_bytes = unsafe { from_raw_parts(seed, 32) };
     let key_bytes = unsafe { from_raw_parts(key, 32) };
@@ -132,7 +146,7 @@ pub extern fn ffi_connect_opt(addr: *const i8, listen: u8, seed: *const u8, key:
 }
 
 #[no_mangle]
-pub extern fn ffi_connect() -> usize {
+pub extern "C" fn ffi_connect() -> usize {
     #[cfg(test)]
     const_test_connect!();
 
@@ -141,19 +155,24 @@ pub extern fn ffi_connect() -> usize {
 
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern fn ffi_listen_opt(addr: *const i8) -> usize {
-    let addr_str = unsafe { CStr::from_ptr(addr)}.to_str().unwrap();
+pub extern "C" fn ffi_listen_opt(addr: *const i8) -> usize {
+    let addr_str = unsafe { CStr::from_ptr(addr) }.to_str().unwrap();
     _listen(addr_str)
 }
 
 #[no_mangle]
-pub extern fn ffi_listen() -> usize {
+pub extern "C" fn ffi_listen() -> usize {
     _listen(ADDRESS)
 }
 
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern fn ffi_accept_opt(socket: usize, listen: u8, seed: *const u8, key: *const u8) -> usize {
+pub extern "C" fn ffi_accept_opt(
+    socket: usize,
+    listen: u8,
+    seed: *const u8,
+    key: *const u8,
+) -> usize {
     let listen_bool = listen != 0;
     let seed_bytes = unsafe { from_raw_parts(seed, 32) };
     let key_bytes = unsafe { from_raw_parts(key, 32) };
@@ -162,7 +181,7 @@ pub extern fn ffi_accept_opt(socket: usize, listen: u8, seed: *const u8, key: *c
 }
 
 #[no_mangle]
-pub extern fn ffi_accept(socket: usize) -> usize {
+pub extern "C" fn ffi_accept(socket: usize) -> usize {
     #[cfg(test)]
     const_test_listen!();
 
@@ -171,7 +190,7 @@ pub extern fn ffi_accept(socket: usize) -> usize {
 
 // FFI API - Simple data transfer interface
 #[no_mangle]
-pub extern fn ffi_send(socket: usize, msg: *const c_void, size: usize) -> usize {
+pub extern "C" fn ffi_send(socket: usize, msg: *const c_void, size: usize) -> usize {
     // TODO: Use snappy compress https://doc.rust-lang.org/nomicon/ffi.html#creating-a-safe-interface to ensure safety of given buffers
     // TODO: Handle nulls
     let buf = unsafe { from_raw_parts(msg as *const u8, size) };
@@ -183,7 +202,7 @@ pub extern fn ffi_send(socket: usize, msg: *const c_void, size: usize) -> usize 
 }
 
 #[no_mangle]
-pub extern fn ffi_recv(socket: usize, msg: *mut c_void, size: usize) -> usize {
+pub extern "C" fn ffi_recv(socket: usize, msg: *mut c_void, size: usize) -> usize {
     let buf = unsafe { from_raw_parts_mut(msg as *mut u8, size) };
 
     let socket_locked = SOCKET.read().unwrap();
@@ -195,7 +214,7 @@ pub extern fn ffi_recv(socket: usize, msg: *mut c_void, size: usize) -> usize {
 // FFI API - Channel handling interface
 #[no_mangle]
 #[cfg(feature = "channels")]
-pub extern fn ffi_get_channel(socket: usize, channel: u8) -> usize {
+pub extern "C" fn ffi_get_channel(socket: usize, channel: u8) -> usize {
     let chan = {
         let socket_locked = SOCKET.read().unwrap();
 
@@ -212,7 +231,7 @@ pub extern fn ffi_get_channel(socket: usize, channel: u8) -> usize {
 
 #[no_mangle]
 #[cfg(feature = "channels")]
-pub extern fn ffi_channel_loop(socket: usize) {
+pub extern "C" fn ffi_channel_loop(socket: usize) {
     let socket_locked = SOCKET.read().unwrap();
 
     let mut sock = socket_locked.get(socket).unwrap().write().unwrap();
@@ -222,7 +241,7 @@ pub extern fn ffi_channel_loop(socket: usize) {
 // FFI API - Channel data transfer interface
 #[no_mangle]
 #[cfg(feature = "channels")]
-pub extern fn ffi_send_channel(channel: usize, msg: *mut c_void, size: usize) -> usize {
+pub extern "C" fn ffi_send_channel(channel: usize, msg: *mut c_void, size: usize) -> usize {
     let buf = unsafe { from_raw_parts_mut(msg as *mut u8, size) };
 
     let channel_locked = SOCKET.read().unwrap();
@@ -233,7 +252,7 @@ pub extern fn ffi_send_channel(channel: usize, msg: *mut c_void, size: usize) ->
 
 #[no_mangle]
 #[cfg(feature = "channels")]
-pub extern fn ffi_recv_channel(channel: usize, msg: *mut c_void, size: usize) -> usize {
+pub extern "C" fn ffi_recv_channel(channel: usize, msg: *mut c_void, size: usize) -> usize {
     let buf = unsafe { from_raw_parts_mut(msg as *mut u8, size) };
 
     let channel_locked = SOCKET.read().unwrap();
@@ -245,7 +264,7 @@ pub extern fn ffi_recv_channel(channel: usize, msg: *mut c_void, size: usize) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread::{spawn, sleep};
+    use std::thread::{sleep, spawn};
     use std::time::Duration;
 
     // The problem when doing 2 (or more) blocking stuff in the same process is that
@@ -257,9 +276,7 @@ mod tests {
     // TODO: SOMETIMES this blocks
     #[test]
     fn test_listen_connect() {
-        let thread = spawn(|| {
-            test_listening()
-        });
+        let thread = spawn(|| test_listening());
 
         sleep(Duration::from_millis(1000));
         test_connecting();
