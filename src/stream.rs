@@ -26,41 +26,45 @@ pub struct Stream {
 }
 
 impl Stream {
-    pub fn new(server: bool, seed: &[u8], remote_key: &[u8]) -> Result<Self> {
+    pub fn new(is_server: bool, private_key_seed: &[u8], remote_public_key: &[u8]) -> Result<Self> {
         // Remote "certificate" (public key) - can't recover from this...
-        let remote_pkey = match kx::PublicKey::from_slice(remote_key) {
+        let remote_public_key_kx = match kx::PublicKey::from_slice(remote_public_key) {
             Some(d) => d,
-            None => return Err(error_str!("Unable to remote key. Is the key 32 bytes?"))
+            None => return Err(error_str!("Unable to remote public key. Is the key 32 bytes?"))
         };
 
         // Actual keypair from seed - can't recover from this...
-        let keys = kx::keypair_from_seed(&match kx::Seed::from_slice(seed) {
+        let keys = kx::keypair_from_seed(&match kx::Seed::from_slice(private_key_seed) {
             Some(d) => d,
-            None => return Err(error_str!("Unable to initialize keys from seed. Is the seed 32 bytes?"))
+            None => return Err(error_str!("Unable to initialize keys from private seed. Is the seed 32 bytes?"))
         });
 
-        let mut _pull_bytes = [0u8; secretstream::KEYBYTES];
-        let mut _push_bytes = [0u8; secretstream::KEYBYTES];
-
         // Compute session keys
-        let (rx, tx) = if server {
-            kx::server_session_keys(&keys.0, &keys.1, &remote_pkey).unwrap()
+        // These are the ephemeral keys generated after the Blake key exchange
+        // One has to be a "server" and one the "client" - which has nothing to do
+        // with actual network topology, it's only naming.
+        // Two parties have to have the opposite value in order to communicate
+        let (rx, tx) = if is_server {
+            kx::server_session_keys(&keys.0, &keys.1, &remote_public_key_kx).unwrap()
         } else {
-            kx::client_session_keys(&keys.0, &keys.1, &remote_pkey).unwrap()
+            kx::client_session_keys(&keys.0, &keys.1, &remote_public_key_kx).unwrap()
         };
 
-        _pull_bytes = rx.0;
-        _push_bytes = tx.0;
+        let pull_bytes = rx.0;
+        let push_bytes = tx.0;
 
-        let push_key = secretstream::Key::from_slice(&_push_bytes).unwrap();
-        let pull_key = secretstream::Key::from_slice(&_pull_bytes).unwrap();
+        // One stream is created to send data (push) and one to receive (pull)
+        let push_key = secretstream::Key::from_slice(&push_bytes).unwrap();
+        let pull_key = secretstream::Key::from_slice(&pull_bytes).unwrap();
 
         let (pusher, header) = secretstream::Stream::init_push(&push_key).unwrap();
         // This is temporary. It's wrong, we have to use the other party's header
+        // in case it has different settings (???)
         let puller = secretstream::Stream::init_pull(&header, &pull_key).unwrap();
 
         Ok(Stream {
             // Tarpaulin has a bug and wants the whole struct in 1 line
+            // TODO: Make these per-transport configuratble
             packet_config: PacketConfig { has_id: true, has_sequence: true, has_data_len: true, max_size: 256 - secretstream::ABYTES, },
             enc_stream: pusher,
             dec_stream: puller,
