@@ -43,12 +43,17 @@ impl Connection {
     pub fn read_all_channels(&mut self) -> Result<HashMap<u8, Vec<u8>>> {
         let mut result: HashMap<u8, Vec<u8>> = HashMap::new();
 
-        let original = self.rw.fill_buf()?;
-        let size = original.len();
+        // let original = self.rw.fill_buf()?;
+        // let size = original.len();
+        let mut original: Vec<u8> = Vec::new();
+        let mut buf = [0; 1];
+        while self.rw.read(&mut buf)? > 0 {
+            original.push(buf[0]);
+        }
 
-        let packets = self.stream.dechunk(original)?;
+        let packets = self.stream.dechunk(original.as_slice())?;
 
-        self.rw.consume(size);
+        // self.rw.consume(size);
 
         for p in packets {
             result.entry(p.get_channel()).or_insert_with(Vec::new).extend(p.data);
@@ -86,7 +91,18 @@ impl Connection {
 
     #[cfg(feature = "channels")]
     pub fn channel_loop(&mut self) -> Result<()> {
+        println!("\tStart send");
+        self.channel_loop_send()?;
+        println!("\tStart recv");
+        self.channel_loop_recv()?;
+        println!("\tEnd!");
+        Ok(())
+    }
+
+    #[cfg(feature = "channels")]
+    pub fn channel_loop_send(&mut self) -> Result<()> {
         for (chan, data) in self.read_all_channels()?.iter() {
+            println!("Looping");
             let channels = match self.channels.get(chan) {
                 Some(d) => d,
                 None => continue
@@ -102,6 +118,11 @@ impl Connection {
         }
         println!("Read all channels");
 
+        Ok(())
+    }
+
+    #[cfg(feature = "channels")]
+    pub fn channel_loop_recv(&mut self) -> Result<()> {
         // The data is first buffered to the HashMap buf and then sent
         // Can't call write_channel inside iter cause it's already borrowed
         // Have I mentioned before that I want the borrow checked to go fuck

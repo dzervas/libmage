@@ -15,8 +15,8 @@ pub mod channel;
 #[cfg(feature = "ffi")]
 pub mod api_ffi;
 
-// #[cfg(feature = "tool")]
-// pub mod tool;
+#[cfg(feature = "tool")]
+pub mod tool;
 
 #[macro_export]
 macro_rules! error_str {

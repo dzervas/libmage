@@ -1,20 +1,19 @@
 extern crate base64;
 extern crate bufstream;
-#[macro_use]
-extern crate may;
 extern crate structopt;
 
+use std::io::{BufRead, Write, Read};
+use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
+use std::thread::{sleep, spawn};
+use std::time::Duration;
 
 use mage::tool::{key, Address};
 use mage::transport::*;
 use mage::connection::Connection;
 
 use structopt::StructOpt;
-use std::io::BufRead;
 use bufstream::BufStream;
-use std::net::{TcpListener, TcpStream};
-use std::io::Write;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "mage")]
@@ -93,9 +92,9 @@ fn main() {
     match opts.cmds {
         Command::Key { gen, armor, output } => {
 
-            if gen && seed.len() == 0 {
+            if gen && seed.is_empty() {
                 seed = key::generate_seed();
-            } else if seed.len() == 0 {
+            } else if seed.is_empty() {
                 eprintln!("Either pass --gen to generate seed or give --input <seed_file>");
                 return;
             }
@@ -140,50 +139,65 @@ fn main() {
             let mut connection = Box::new(Connection::new(0, Box::new(conn), mage_addr.listen, seed.as_slice(), remote_key.as_slice()).unwrap());
             println!("AAA");
 
-            let proxy_conn = if proxy_listen {
+            let mut proxy_conn = if proxy_listen {
                 let listener = TcpListener::bind((proxy_addr.as_str(), proxy_port)).unwrap();
                 listener.accept().unwrap().0
             } else {
                 TcpStream::connect((proxy_addr.as_str(), proxy_port)).unwrap()
             };
 
-            let mut proxy_buf = BufStream::new(proxy_conn.try_clone().unwrap());
-            let mut proxy_buf2 = BufStream::new(proxy_conn);
+            // let mut proxy_buf = BufStream::new(proxy_conn.try_clone().unwrap());
+            // let mut proxy_buf2 = BufStream::new(proxy_conn);
+            let mut proxy_conn2 = proxy_conn.try_clone().unwrap();
 
             let ch = connection.get_channel(1);
             let (conn_tx, conn_rx) = (ch.sender, ch.receiver);
 
-            go!(move || {
+            // if proxy_listen {
+            //     conn_tx.lock().unwrap().send(b"EHLO".to_vec()).unwrap();
+            // }
+
+            let _thread_tx = spawn(move || {
                 loop {
-                    println!("Read");
-                    let buf = proxy_buf.fill_buf().unwrap();
-                    let length = buf.len();
-                    println!("Read2");
+                    // println!("Read");
+                    // let buf = proxy_buf.fill_buf().unwrap();
+                    // let length = buf.len();
+                    let mut buf = [0; 2048];
+                    let length = proxy_conn.read(&mut buf).unwrap();
+                    // println!("Read2");
                     if length > 0 {
-                        println!("sending {} bytes: {:?}", length, buf.clone());
-                        conn_tx.send(buf.to_vec()).unwrap();
+                        println!("sending {} bytes: ", length);
+                        conn_tx.lock().unwrap().send(buf.to_vec()).unwrap();
+                        // ch.write_all(buf);
                     }
-                    proxy_buf.consume(length);
+                    // proxy_buf.consume(length);
                 }
             });
 
             println!("here");
 
-            go!(move || {
+            let _thread_rx = spawn(move || {
                 loop {
                     println!("Recv");
-                    let d = conn_rx.recv().unwrap();
+                    let d = conn_rx.lock().unwrap().recv().unwrap();
+                    // let mut buf = [0; 2048];
+                    // let size = ch.read(&mut buf).unwrap();
                     println!("Recv2");
+                    // if size > 0 {
                     if !d.is_empty() {
-                        proxy_buf2.write_all(d.as_slice()).unwrap();
-                        proxy_buf2.flush().unwrap();
+                        // proxy_buf2.write_all(&buf[..size]).unwrap();
+                        proxy_conn2.write_all(d.as_slice()).unwrap();
+                        proxy_conn2.flush().unwrap();
                     }
                     println!("Proxy: something moved!");
                 }
             });
 
+            sleep(Duration::from_secs(1));
+
             println!("Starting mage loop");
             loop {
+                // connection.channel_loop_recv().unwrap();
                 connection.channel_loop().unwrap();
                 println!("Mage: something moved!")
             }

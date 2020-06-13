@@ -16,6 +16,7 @@ impl Read for Channel {
             Err(_e) => return Err(error_str!("Failed to lock `recv` Mutex by channel"))
         };
 
+        // Maybe this needs to be try_recv?
         match r.recv() {
             Ok(bytes) => buf.write(bytes.as_slice()),
             Err(e) => Err(error_str!("Failed to recv data from channel: {}", e)),

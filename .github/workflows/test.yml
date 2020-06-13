@@ -22,8 +22,6 @@ jobs:
 
       - name: Test Project on ${{ matrix.os }}
         run: cargo test -v --all-features --release
-      - name: Build Project on ${{ matrix.os }}
-        run: cargo build -v --all-features --release
       - name: Test Go Bindings on ${{ matrix.os }}
         env:
           LD_LIBRARY_PATH: "target/release"
@@ -33,7 +31,7 @@ jobs:
       - name: Generate Coverage report
         if: runner.os == 'Linux'
         env:
-          LD_LIBRARY_PATH: "target/release"
+          LD_LIBRARY_PATH: "target/debug"
         run: |
           cargo install cargo-tarpaulin
           cargo tarpaulin -v -b --all-features --coveralls ${{ secrets.COVERALLS_TOKEN }}

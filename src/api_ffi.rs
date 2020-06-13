@@ -254,6 +254,7 @@ mod tests {
     // accept() should already be running - but that blocks, so the thread is
     // locked and connect() can't run till accept() is done (which needs a connect()) etc.
     // Chicken & egg :)
+    // TODO: SOMETIMES this blocks
     #[test]
     fn test_listen_connect() {
         let thread = spawn(|| {
