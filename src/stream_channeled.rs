@@ -1,34 +1,32 @@
 use std::collections::HashMap;
-use std::io::{Error, ErrorKind, Read, Result, Write};
+use std::io::{Error, ErrorKind, Result};
 use std::sync::mpsc::{channel as ch, Receiver, Sender};
 use std::sync::Mutex;
 
 use crate::error_str;
 use crate::stream::{StreamIn, StreamOut};
 
-pub struct StreamChanneledIn<'a, T>
-where
-    T: Read
+pub struct StreamChanneledIn
 {
     pub id: u32,
-    stream_in: StreamIn<'a, T>,
+    pub stream_in: StreamIn,
 
-    channels: HashMap<u8, Vec<Mutex<Sender<Vec<u8>>>>>,
+    pub channels: HashMap<u8, Vec<Mutex<Sender<Vec<u8>>>>>,
 }
 
-impl<T> StreamChanneledIn<'_, T> where T: Read {
-    pub fn read_stream(&self) -> Result<(u8, Vec<u8>)> {
+impl StreamChanneledIn {
+    pub fn read_stream(&mut self) -> Result<(u8, Vec<u8>)> {
         let packet = self.stream_in.dechunk()?;
 
         Ok((packet.get_channel(), packet.data))
     }
 
     pub fn write_channels(&self, channel: u8, data: Vec<u8>) -> Result<()> {
-        let to_notify = self.channels.get(&channel).expect(format!("No Senders found for channel {}", channel));
+        let to_notify = self.channels.get(&channel).expect(format!("No Senders found for channel {}", channel).as_str());
 
         for sender in to_notify {
             match sender.lock() {
-                Ok(d) => d.send(data.clone()).expect(format!("Unable to receive data from channel {}, receiver {:?}", channel, sender)),
+                Ok(d) => d.send(data.clone()).expect(format!("Unable to receive data from channel {}, receiver {:?}", channel, sender).as_str()),
                 Err(_e) => return Err(error_str!("Failed to lock `send` Mutex for channel")),
             };
         }
@@ -36,7 +34,7 @@ impl<T> StreamChanneledIn<'_, T> where T: Read {
         Ok(())
     }
 
-    pub fn get_channel_recv(&self, channel: u8) -> Receiver<Vec<u8>> {
+    pub fn get_channel_recv(&mut self, channel: u8) -> Receiver<Vec<u8>> {
         let (sender, receiver) = ch();
         self.channels
             .entry(channel)
@@ -49,20 +47,18 @@ impl<T> StreamChanneledIn<'_, T> where T: Read {
     }
 }
 
-pub struct StreamChanneledOut<'a, T>
-where
-    T: Write
+pub struct StreamChanneledOut
 {
     pub id: u32,
-    stream_out: StreamOut<'a, T>,
+    pub stream_out: StreamOut,
 
-    channels: HashMap<u8, Vec<Mutex<Receiver<Vec<u8>>>>>,
+    pub channels: HashMap<u8, Vec<Mutex<Receiver<Vec<u8>>>>>,
 }
 
-impl<T> StreamChanneledOut<'_, T> where T: Write {
+impl StreamChanneledOut {
     pub fn read_channel(&self, channel: u8) -> Result<Vec<Vec<u8>>> {
-        let to_listen = self.channels.get(&channel).expect(format!("No Receivers found for channel {}", channel));
-        let result = Vec::new();
+        let to_listen = self.channels.get(&channel).expect(format!("No Receivers found for channel {}", channel).as_str());
+        let mut result = Vec::new();
 
         for receiver in to_listen {
             let data = match receiver.lock() {
@@ -71,17 +67,17 @@ impl<T> StreamChanneledOut<'_, T> where T: Write {
             };
 
             result.push(data.expect(format!("Unable to receive data from channel {}, receiver {:?}",
-                        channel, receiver)));
+                        channel, receiver).as_str()));
         }
 
         Ok(result)
     }
 
-    pub fn write_stream(&self, channel: u8, data: &[u8]) -> Result<()> {
+    pub fn write_stream(&mut self, channel: u8, data: &[u8]) -> Result<()> {
         self.stream_out.chunk(self.id, channel, data)
     }
 
-    pub fn get_channel_send(&self, channel: u8) -> Sender<Vec<u8>> {
+    pub fn get_channel_send(&mut self, channel: u8) -> Sender<Vec<u8>> {
         let (sender, receiver) = ch();
         self.channels
             .entry(channel)

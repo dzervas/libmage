@@ -1,7 +1,7 @@
 use std::net::{TcpListener, TcpStream, ToSocketAddrs};
-use std::io::Result;
+use std::io::{Read, Result, Write};
 
-use super::{Connector, Listener, ReadWrite};
+use super::{Connector, Listener};
 
 pub struct Tcp(TcpListener);
 
@@ -10,14 +10,26 @@ impl Listener for Tcp {
         Ok(Self(TcpListener::bind(addr)?))
     }
 
-    fn accept(&self) -> Result<Box<dyn ReadWrite>> {
-        Ok(Box::new(self.0.accept()?.0))
+    fn accept(&self) -> Result<(Box<dyn Read + Send + Sync>, Box<dyn Write + Send + Sync>)> {
+        let socket = self.0.accept()?.0;
+        let result = (
+            Box::new(socket.try_clone()?) as Box<dyn Read + Send + Sync>,
+            Box::new(socket) as Box<dyn Write + Send + Sync>
+        );
+
+        Ok(result)
     }
 }
 
 impl Connector for Tcp {
-    fn connect<A: ToSocketAddrs>(addr: A) -> Result<Box<dyn ReadWrite>> {
-        Ok(Box::new(TcpStream::connect(addr)?))
+    fn connect<A: ToSocketAddrs>(addr: A) -> Result<(Box<dyn Read + Send + Sync>, Box<dyn Write + Send + Sync>)> {
+        let socket = TcpStream::connect(addr)?;
+        let result = (
+            Box::new(socket.try_clone()?) as Box<dyn Read + Send + Sync>,
+            Box::new(socket) as Box<dyn Write + Send + Sync>
+        );
+
+        Ok(result)
     }
 }
 

@@ -11,14 +11,11 @@ macro_rules! enable_transport {
 
 // Transport definition
 enable_transport!(tcp, "trans_tcp");
-enable_transport!(socks, "trans_socks");
+// enable_transport!(socks, "trans_socks");
 
 // A trait for bidirectional communication
 use std::io::{Read, Write};
 use std::net::ToSocketAddrs;
-
-pub trait ReadWrite: Read + Write + Sync + Send {}
-impl<T: ?Sized + Read + Write + Sync + Send> ReadWrite for T {}
 
 // Listener/Connector traits
 // It should be noted that both can be part of either
@@ -31,13 +28,13 @@ impl<T: ?Sized + Read + Write + Sync + Send> ReadWrite for T {}
 pub trait Listener: Sized + Send {
     fn listen<A: ToSocketAddrs>(addr: A) -> Result<Self>;
     // TODO: Add some kind of address struct?
-    fn accept(&self) -> Result<Box<dyn ReadWrite>>;
+    fn accept(&self) -> Result<(Box<dyn Read + Send + Sync>, Box<dyn Write + Send + Sync>)>;
     // TODO: Make the damn iterator work
     //    fn incoming(&self) -> dyn Iterator<Item=i32>;
 }
 
 pub trait Connector: Sized + Send {
-    fn connect<A: ToSocketAddrs>(addr: A) -> Result<Box<dyn ReadWrite>>;
+    fn connect<A: ToSocketAddrs>(addr: A) -> Result<(Box<dyn Read + Send + Sync>, Box<dyn Write + Send + Sync>)>;
 }
 
 pub trait Transport: Listener + Connector {}

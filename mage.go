@@ -3,9 +3,9 @@ package main
 // `cargo build --release --features ffi` to use this!
 // On Linux LD_LIBRARY_PATH=target/release env is required!
 
-// #cgo LDFLAGS: -Ltarget/release -lmage
-// #cgo CFLAGS: -Itarget/release
-// #include "target/release/mage.h"
+// #cgo LDFLAGS: -Ltarget/debug -lmage
+// #cgo CFLAGS: -Itarget/debug
+// #include "target/debug/mage.h"
 import "C"
 
 import (

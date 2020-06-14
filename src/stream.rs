@@ -7,24 +7,13 @@ use crate::stream_channeled::{StreamChanneledIn, StreamChanneledOut};
 
 use sodiumoxide::crypto::{kx, secretstream};
 
-#[derive(PartialEq, Debug)]
-enum State {
-    Uninitialized,
-    SentHeader,
-    RecvHeader,
-    Done,
-}
-
-pub fn exchange_keys<'a, R, W>(
-    reader: &'a mut R,
-    writer: &'a mut W,
+pub fn exchange_keys(
+    mut reader: Box<dyn Read + Send + Sync>,
+    mut writer: Box<dyn Write + Send + Sync>,
     is_server: bool,
     private_key_seed: &[u8],
     remote_public_key: &[u8],
-) -> Result<(StreamIn<'a, R>, StreamOut<'a, W>)>
-where
-    R: Read,
-    W: Write,
+) -> Result<(StreamIn, StreamOut)>
 {
     // Remote "certificate" (public key) - can't recover from this...
     let remote_public_key_kx = match kx::PublicKey::from_slice(remote_public_key) {
@@ -65,7 +54,7 @@ where
     let pull_key = secretstream::Key::from_slice(&pull_bytes).unwrap();
 
     let (pusher, header) = secretstream::Stream::init_push(&push_key).unwrap();
-    let mut remote_header_bytes: [u8; secretstream::HEADERBYTES];
+    let mut remote_header_bytes: [u8; secretstream::HEADERBYTES] = [0; secretstream::HEADERBYTES];
 
     if is_server {
         reader.read_exact(&mut remote_header_bytes)?;
@@ -88,7 +77,7 @@ where
                 has_data_len: true,
                 max_size: 256 - secretstream::ABYTES,
             },
-            reader,
+            reader: Box::new(reader) as Box<dyn Read + Send + Sync>,
             puller,
         },
         StreamOut {
@@ -98,42 +87,39 @@ where
                 has_data_len: true,
                 max_size: 256 - secretstream::ABYTES,
             },
-            writer,
+            writer: Box::new(writer) as Box<dyn Write + Send + Sync>,
             pusher,
         },
     ))
 }
 
-pub struct StreamIn<'a, T>
-where
-    T: Read,
+pub struct StreamIn
 {
     packet_config: PacketConfig,
-    reader: &'a T,
+    reader: Box<dyn Read + Send + Sync>,
     puller: secretstream::Stream<secretstream::Pull>,
 }
 
-impl<'a, T> StreamIn<'a, T>
-where
-    T: Read,
+impl StreamIn
 {
-    pub fn to_channeled(&mut self, id: u32) -> StreamChanneledIn<'a, T> {
+    pub fn to_channeled(self, id: u32) -> StreamChanneledIn {
         StreamChanneledIn {
             id,
-            stream_in: *self,
+            stream_in: self,
             channels: HashMap::new()
         }
     }
 
     pub fn dechunk(&mut self) -> Result<Packet> {
-        let mut read: usize = 0;
         let mut read_bytes: Vec<u8> = Vec::new();
 
-        let plaintext: Vec<u8> = Vec::new();
-        let _tag: secretstream::Tag = secretstream::Tag::Message;
+        let mut byte = [0];
+        let mut plaintext: Vec<u8> = Vec::new();
+        let mut _tag: secretstream::Tag = secretstream::Tag::Message;
 
-        for byte in self.reader.bytes() {
-            if let Err(e) = byte {
+        #[allow(irrefutable_let_patterns)]
+        while let byte_result = self.reader.read(&mut byte) {
+            if let Err(e) = byte_result {
                 match e.kind() {
                     ErrorKind::Interrupted | ErrorKind::UnexpectedEof | ErrorKind::WouldBlock => {}
                     _ => return Err(e),
@@ -141,7 +127,7 @@ where
             } else if read_bytes.len() >= secretstream::ABYTES + self.packet_config.max_size {
                 break;
             } else {
-                read_bytes.push(byte.unwrap());
+                read_bytes.push(byte[0]);
             }
 
             if read_bytes.len() <= secretstream::ABYTES {
@@ -149,14 +135,11 @@ where
             }
 
             // Do something with the tag?
-            match self.puller.pull(read_bytes.as_slice(), None) {
-                Ok(d) => {
-                    plaintext = d.0;
-                    _tag = d.1;
-                    break;
-                },
-                Err(_) => {}
-            };
+            if let Ok(d) = self.puller.pull(read_bytes.as_slice(), None) {
+                plaintext = d.0;
+                _tag = d.1;
+                break;
+            }
         }
 
         if plaintext.is_empty() {
@@ -166,7 +149,7 @@ where
         #[cfg(not(test))]
         println!("Dechunked {}: {:?}", read_bytes.len(), read_bytes);
 
-        let (packet, _config, deserialized_bytes) = PacketConfig::deserialize(plaintext.as_slice());
+        let (packet, _config, _deserialized_bytes) = PacketConfig::deserialize(plaintext.as_slice());
         // While I think it's a good idea to error out on different configs, max_size can't be
         // calculated if we don't have data_len enabled, as a smaller packet will have smaller
         // max_size (due to less data). Maybe I should implement that logic in the Eq trait
@@ -175,23 +158,19 @@ where
     }
 }
 
-pub struct StreamOut<'a, T>
-where
-    T: Write,
+pub struct StreamOut
 {
     packet_config: PacketConfig,
-    writer: &'a T,
+    writer: Box<dyn Write + Send + Sync>,
     pusher: secretstream::Stream<secretstream::Push>,
 }
 
-impl<'a, T> StreamOut<'a, T>
-where
-    T: Write,
+impl StreamOut
 {
-    pub fn to_channeled(&mut self, id: u32) -> StreamChanneledOut<'a, T> {
+    pub fn to_channeled(self, id: u32) -> StreamChanneledOut {
         StreamChanneledOut {
             id,
-            stream_out: *self,
+            stream_out: self,
             channels: HashMap::new()
         }
     }
