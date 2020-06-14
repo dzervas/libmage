@@ -28,6 +28,8 @@ func HelpListen(t *testing.T, finished chan bool) {
 		t.Errorf("buf should be 'World', but it's '%s'", buf)
 	}
 
+	time.Sleep(time.Second) // Wait for channel loop to start
+	time.Sleep(time.Second) // Wait for channel loop to start
 	fmt.Println("===============")
 	ch := c.GetChannel(5) // 0 is the default used channel
 	fmt.Println("\t[Go] Channels:")
@@ -67,24 +69,26 @@ func HelpConnect(t *testing.T) *StreamChanneled {
 }
 
 func TestListenConnect(t *testing.T) {
-	listen_finish := make(chan bool)
-	go HelpListen(t, listen_finish)
+	listenFinish := make(chan bool)
+	go HelpListen(t, listenFinish)
 	time.Sleep(time.Second) // Wait for listener to start
 	c := HelpConnect(t)
+	time.Sleep(time.Second) // Wait for channel loop to start
 
 	ch := c.GetChannel(5) // 0 is the default used channel
 	buf := []byte("haha!")
 
 	fmt.Println("\t[Go] Read")
+	c.ChannelLoopIn()
 	ch.Read(buf)
 	fmt.Println("\t[Go] Write")
 	ch.Write(buf)
+	c.ChannelLoopOut()
 
 	fmt.Println("\t[Go] Loop started")
 	time.Sleep(100 * time.Millisecond) // Wait for channel loop to start
-	go c.ChannelLoop()
 
-	<-listen_finish
+	<-listenFinish
 
 	if string(buf) != "hoho!" {
 		t.Errorf("buf should be 'hoho!', but it's '%s'", buf)

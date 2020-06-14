@@ -224,27 +224,60 @@ pub extern "C" fn ffi_recv(socket: usize, msg: *mut c_void, size: usize) -> usiz
 
 // FFI API - Channel handling interface
 #[no_mangle]
-pub extern "C" fn ffi_get_channel(socket: usize, channel: u8) -> usize {
+pub extern "C" fn ffi_get_channel_recv(socket: usize, channel: u8) -> usize {
     let chan = {
-        let socket_locked = SOCKET.read().unwrap();
+        let socket_locked = SOCKET_IN.read().unwrap();
 
-        let mut sock = socket_locked.get(socket).unwrap().write().unwrap();
-        sock.get_channel(channel)
+        let mut sock = socket_locked.get(socket).unwrap().lock().unwrap();
+        sock.get_channel_recv(channel)
     };
 
-    let mut channel_locked = CHANNEL.write().unwrap();
+    let mut channel_locked = CHANNEL_RECV.write().unwrap();
 
-    channel_locked.push(RwLock::new(chan));
+    channel_locked.push(Mutex::new(chan));
+    println!("Channel RECV state: {:?}", channel_locked);
 
     channel_locked.len() - 1
 }
 
 #[no_mangle]
-pub extern "C" fn ffi_channel_loop(socket: usize) {
-    let socket_locked = SOCKET.read().unwrap();
+pub extern "C" fn ffi_get_channel_send(socket: usize, channel: u8) -> usize {
+    let chan = {
+        let socket_locked = SOCKET_OUT.read().unwrap();
 
-    let mut sock = socket_locked.get(socket).unwrap().write().unwrap();
-    sock.channel_loop().unwrap();
+        let mut sock = socket_locked.get(socket).unwrap().lock().unwrap();
+        sock.get_channel_send(channel)
+    };
+
+    let mut channel_locked = CHANNEL_SEND.write().unwrap();
+
+    channel_locked.push(Mutex::new(chan));
+    println!("Channel SEND state: {:?}", channel_locked);
+
+    channel_locked.len() - 1
+}
+
+#[no_mangle]
+pub extern "C" fn ffi_channel_propagate_in(socket: usize) {
+    let socket_locked = SOCKET_IN.read().unwrap();
+    let mut sock = socket_locked.get(socket).unwrap().lock().unwrap();
+
+    let (channel, data) = sock.read_stream().unwrap();
+    sock.write_channels(channel, data).unwrap();
+}
+
+#[no_mangle]
+pub extern "C" fn ffi_channel_propagate_out(socket: usize) {
+    let socket_locked = SOCKET_OUT.read().unwrap();
+    let mut sock = socket_locked.get(socket).unwrap().lock().unwrap();
+
+    let data = sock.read_channels().unwrap();
+
+    for (channel, packet) in data {
+        for p in packet {
+            sock.write_stream(channel, p.as_slice()).unwrap();
+        }
+    }
 }
 
 // FFI API - Channel data transfer interface
@@ -252,20 +285,24 @@ pub extern "C" fn ffi_channel_loop(socket: usize) {
 pub extern "C" fn ffi_send_channel(channel: usize, msg: *mut c_void, size: usize) -> usize {
     let buf = unsafe { from_raw_parts_mut(msg as *mut u8, size) };
 
-    let channel_locked = SOCKET.read().unwrap();
-    let mut chan = channel_locked.get(channel).unwrap().write().unwrap();
+    let channel_locked = CHANNEL_SEND.read().unwrap();
+    let chan = channel_locked.get(channel).unwrap().lock().unwrap();
 
-    chan.write(buf).unwrap()
+    chan.send(buf.to_vec()).unwrap();
+    buf.len()
 }
 
 #[no_mangle]
 pub extern "C" fn ffi_recv_channel(channel: usize, msg: *mut c_void, size: usize) -> usize {
     let buf = unsafe { from_raw_parts_mut(msg as *mut u8, size) };
 
-    let channel_locked = SOCKET.read().unwrap();
-    let mut chan = channel_locked.get(channel).unwrap().write().unwrap();
+    let channel_locked = CHANNEL_RECV.read().unwrap();
+    let chan = channel_locked.get(channel).unwrap().lock().unwrap();
 
-    chan.read(buf).unwrap()
+    let data = chan.recv().unwrap();
+
+    buf.copy_from_slice(data.as_slice());
+    buf.len()
 }
 
 #[cfg(test)]

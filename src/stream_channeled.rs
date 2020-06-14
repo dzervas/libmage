@@ -56,18 +56,21 @@ pub struct StreamChanneledOut
 }
 
 impl StreamChanneledOut {
-    pub fn read_channel(&self, channel: u8) -> Result<Vec<Vec<u8>>> {
-        let to_listen = self.channels.get(&channel).expect(format!("No Receivers found for channel {}", channel).as_str());
-        let mut result = Vec::new();
+    pub fn read_channels(&self) -> Result<HashMap<u8, Vec<Vec<u8>>>> {
+        let mut result = HashMap::new();
 
-        for receiver in to_listen {
-            let data = match receiver.lock() {
-                Ok(d) => d.recv(),
-                Err(_e) => return Err(error_str!("Failed to lock `send` Mutex for channel")),
-            };
+        for channel in self.channels.keys() {
+            for r in self.channels.get(channel).unwrap() {
+                let data = match r.lock() {
+                    Ok(d) => d.recv(),
+                    Err(_e) => return Err(error_str!("Failed to lock `send` Mutex for channel")),
+                };
 
-            result.push(data.expect(format!("Unable to receive data from channel {}, receiver {:?}",
-                        channel, receiver).as_str()));
+                result
+                    .entry(*channel)
+                    .or_insert_with(Vec::new)
+                    .push(data.expect(format!("Unable to receive data from channel {}, receiver {:?}", channel, r).as_str()));
+            }
         }
 
         Ok(result)

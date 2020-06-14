@@ -61,13 +61,22 @@ func Connect(addr string, seed [32]byte, key [32]byte) *StreamChanneled {
 }
 
 func (c *StreamChanneled) GetChannel(i byte) *Channel {
-	r := C.ffi_get_channel(c.index, C.uchar(i))
+	r := C.ffi_get_channel_recv(c.index, C.uchar(i))
+	s := C.ffi_get_channel_send(c.index, C.uchar(i))
+
+	if s != r {
+		fmt.Println("Different send & recv indexes. That ain't good...")
+	}
 
 	return &Channel{index: r}
 }
 
-func (c *StreamChanneled) ChannelLoop() {
-	C.ffi_channel_loop(c.index)
+func (c *StreamChanneled) ChannelLoopIn() {
+	C.ffi_channel_propagate_in(c.index)
+}
+
+func (c *StreamChanneled) ChannelLoopOut() {
+	C.ffi_channel_propagate_out(c.index)
 }
 
 func (c *StreamChanneled) Read(buffer []byte) (int, error) {
