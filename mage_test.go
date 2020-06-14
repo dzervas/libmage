@@ -44,7 +44,7 @@ func HelpListen(t *testing.T, finished chan bool) {
 	finished <- true
 }
 
-func HelpConnect(t *testing.T) *Connection {
+func HelpConnect(t *testing.T) *StreamChanneled {
 	fmt.Println("[Go] Connecting...")
 	seed := [32]byte{}
 	for i := range seed {

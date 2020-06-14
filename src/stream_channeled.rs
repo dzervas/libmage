@@ -1,201 +1,96 @@
 use std::collections::HashMap;
-use std::io::{BufRead, Read, Result, Write};
+use std::io::{Error, ErrorKind, Read, Result, Write};
+use std::sync::mpsc::{channel as ch, Receiver, Sender};
+use std::sync::Mutex;
 
-use bufstream::BufStream;
+use crate::error_str;
+use crate::stream::{StreamIn, StreamOut};
 
-use crate::stream::Stream;
-use crate::transport::ReadWrite;
-
-#[cfg(feature = "channels")]
-use {
-    crate::channel::Channel,
-    crate::error_str,
-    std::borrow::BorrowMut,
-    std::io::{Error, ErrorKind},
-    std::sync::mpsc::{channel as ch, Receiver, Sender},
-    std::sync::Mutex,
-};
-
-pub struct Connection {
+pub struct StreamChanneledIn<'a, T>
+where
+    T: Read
+{
     pub id: u32,
-    stream: Stream,
-    rw: BufStream<Box<dyn ReadWrite>>,
+    stream_in: StreamIn<'a, T>,
 
-    #[cfg(feature = "channels")]
-    channels: HashMap<u8, Vec<(Mutex<Sender<Vec<u8>>>, Mutex<Receiver<Vec<u8>>>)>>,
+    channels: HashMap<u8, Vec<Mutex<Sender<Vec<u8>>>>>,
 }
 
-impl Connection {
-    pub fn new(
-        id: u32,
-        rw: Box<dyn ReadWrite>,
-        server: bool,
-        seed: &[u8],
-        remote_key: &[u8],
-    ) -> Result<Self> {
-        match Stream::new(server, seed, remote_key) {
-            Ok(stream) => Ok(Connection {
-                id,
-                stream,
-                rw: BufStream::new(rw),
-                #[cfg(feature = "channels")]
-                channels: HashMap::new(),
-            }),
-            Err(e) => Err(e),
-        }
+impl<T> StreamChanneledIn<'_, T> where T: Read {
+    pub fn read_stream(&self) -> Result<(u8, Vec<u8>)> {
+        let packet = self.stream_in.dechunk()?;
+
+        Ok((packet.get_channel(), packet.data))
     }
 
-    pub fn read_all_channels(&mut self) -> Result<HashMap<u8, Vec<u8>>> {
-        let mut result: HashMap<u8, Vec<u8>> = HashMap::new();
+    pub fn write_channels(&self, channel: u8, data: Vec<u8>) -> Result<()> {
+        let to_notify = self.channels.get(&channel).expect(format!("No Senders found for channel {}", channel));
 
-        // let original = self.rw.fill_buf()?;
-        // let size = original.len();
-        let mut original: Vec<u8> = Vec::new();
-        let mut buf = [0; 1];
-        while self.rw.read(&mut buf)? > 0 {
-            original.push(buf[0]);
+        for sender in to_notify {
+            match sender.lock() {
+                Ok(d) => d.send(data.clone()).expect(format!("Unable to receive data from channel {}, receiver {:?}", channel, sender)),
+                Err(_e) => return Err(error_str!("Failed to lock `send` Mutex for channel")),
+            };
         }
 
-        let packets = self.stream.dechunk(original.as_slice())?;
-
-        // self.rw.consume(size);
-
-        for p in packets {
-            result
-                .entry(p.get_channel())
-                .or_insert_with(Vec::new)
-                .extend(p.data);
-        }
-
-        Ok(result)
+        Ok(())
     }
 
-    pub fn write_channel(&mut self, channel: u8, data: &[u8]) -> Result<usize> {
-        let packets = self.stream.chunk(0, channel, data)?;
-        let mut result: usize = 0;
-
-        for p in packets {
-            result += self.rw.write(p.as_slice())?;
-        }
-
-        // Is this needed?
-        self.rw.flush()?;
-
-        Ok(result)
-    }
-
-    #[cfg(feature = "channels")]
-    pub fn get_channel(&mut self, channel: u8) -> Channel {
-        let (from_ch, to_conn) = ch();
-        let (from_conn, to_ch) = ch();
+    pub fn get_channel_recv(&self, channel: u8) -> Receiver<Vec<u8>> {
+        let (sender, receiver) = ch();
         self.channels
             .entry(channel)
             .or_insert_with(Vec::new)
-            .push((Mutex::new(from_conn), Mutex::new(to_conn)));
-        println!("New Channel {:?}", self.channels);
+            .push(Mutex::new(sender));
 
-        Channel {
-            sender: Mutex::new(from_ch),
-            receiver: Mutex::new(to_ch),
-        }
+        println!("New Sender Channel {:?}", self.channels);
+
+        receiver
     }
+}
 
-    #[cfg(feature = "channels")]
-    pub fn channel_loop(&mut self) -> Result<()> {
-        println!("\tStart send");
-        self.channel_loop_send()?;
-        println!("\tStart recv");
-        self.channel_loop_recv()?;
-        println!("\tEnd!");
-        Ok(())
-    }
+pub struct StreamChanneledOut<'a, T>
+where
+    T: Write
+{
+    pub id: u32,
+    stream_out: StreamOut<'a, T>,
 
-    #[cfg(feature = "channels")]
-    pub fn channel_loop_send(&mut self) -> Result<()> {
-        for (chan, data) in self.read_all_channels()?.iter() {
-            println!("Looping");
-            let channels = match self.channels.get(chan) {
-                Some(d) => d,
-                None => continue,
+    channels: HashMap<u8, Vec<Mutex<Receiver<Vec<u8>>>>>,
+}
+
+impl<T> StreamChanneledOut<'_, T> where T: Write {
+    pub fn read_channel(&self, channel: u8) -> Result<Vec<Vec<u8>>> {
+        let to_listen = self.channels.get(&channel).expect(format!("No Receivers found for channel {}", channel));
+        let result = Vec::new();
+
+        for receiver in to_listen {
+            let data = match receiver.lock() {
+                Ok(d) => d.recv(),
+                Err(_e) => return Err(error_str!("Failed to lock `send` Mutex for channel")),
             };
 
-            for c in channels {
-                let r = match c.0.lock() {
-                    Ok(d) => d.send(data.clone()),
-                    Err(_e) => return Err(error_str!("Failed to lock `send` Mutex for channel")),
-                };
-                if r.is_err() {
-                    return Err(error_str!("Unable to send message"));
-                }
-            }
+            result.push(data.expect(format!("Unable to receive data from channel {}, receiver {:?}",
+                        channel, receiver)));
         }
-        println!("Read all channels");
 
-        Ok(())
+        Ok(result)
     }
 
-    #[cfg(feature = "channels")]
-    pub fn channel_loop_recv(&mut self) -> Result<()> {
-        // The data is first buffered to the HashMap buf and then sent
-        // Can't call write_channel inside iter cause it's already borrowed
-        // Have I mentioned before that I want the borrow checked to go fuck
-        // itself? No? Happy to do so :)
-        let mut buf: HashMap<u8, Vec<u8>> = HashMap::new();
-
-        for (chan, receivers) in self.channels.iter() {
-            for (_send, recv) in receivers {
-                let r = match recv.lock() {
-                    Ok(d) => d,
-                    Err(_e) => return Err(error_str!("Failed to lock `send` Mutex for channel")),
-                };
-
-                if let Ok(d) = r.try_recv() {
-                    buf.entry(*chan)
-                        .or_insert_with(Vec::new)
-                        .append(d.to_vec().borrow_mut())
-                }
-            }
-        }
-        println!("Read all data to channels");
-
-        for (chan, data) in buf.iter() {
-            self.write_channel(*chan, data.as_slice())?;
-        }
-        println!("Sent all data to channels");
-
-        Ok(())
-    }
-}
-
-#[deprecated(
-    since = "0.1.0",
-    note = "Please use `read_all_channels` or `channel_loop` with `get_channel`"
-)]
-impl Read for Connection {
-    fn read(&mut self, mut buf: &mut [u8]) -> Result<usize> {
-        let dechunked = self.read_all_channels()?;
-
-        // Dunno how to hit "None" in a test
-        let bytes = match dechunked.get(&0u8) {
-            Some(d) => d.as_slice(),
-            None => &[],
-        };
-
-        buf.write(bytes)
-    }
-}
-
-#[deprecated(
-    since = "0.1.0",
-    note = "Please use `write_channel` or `channel_loop` with `get_channel`"
-)]
-impl Write for Connection {
-    fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        self.write_channel(0, buf)
+    pub fn write_stream(&self, channel: u8, data: &[u8]) -> Result<()> {
+        self.stream_out.chunk(self.id, channel, data)
     }
 
-    fn flush(&mut self) -> Result<()> {
-        self.rw.flush()
+    pub fn get_channel_send(&self, channel: u8) -> Sender<Vec<u8>> {
+        let (sender, receiver) = ch();
+        self.channels
+            .entry(channel)
+            .or_insert_with(Vec::new)
+            .push(Mutex::new(receiver));
+
+        println!("New Receiver Channel {:?}", self.channels);
+
+        sender
     }
 }
 
@@ -221,7 +116,7 @@ mod tests {
         let file = File::create(TEST_FILE_PATH).unwrap();
 
         assert!(
-            Connection::new(
+            StreamChanneled::new(
                 10,
                 Box::new(file.try_clone().unwrap()),
                 true,
@@ -229,10 +124,10 @@ mod tests {
                 &[2; 32]
             )
             .is_ok(),
-            "Can't create dummy connection"
+            "Can't create dummy stream_channeled"
         );
         assert!(
-            Connection::new(
+            StreamChanneled::new(
                 10,
                 Box::new(file.try_clone().unwrap()),
                 true,
@@ -243,7 +138,7 @@ mod tests {
             "Key seed is too small, must be 32 bytes"
         );
         assert!(
-            Connection::new(
+            StreamChanneled::new(
                 10,
                 Box::new(file.try_clone().unwrap()),
                 true,
@@ -254,7 +149,7 @@ mod tests {
             "Key seed is too big, must be 32 bytes"
         );
         assert!(
-            Connection::new(
+            StreamChanneled::new(
                 10,
                 Box::new(file.try_clone().unwrap()),
                 true,
@@ -265,7 +160,7 @@ mod tests {
             "Remote key is too small, must be 32 bytes"
         );
         assert!(
-            Connection::new(
+            StreamChanneled::new(
                 10,
                 Box::new(file.try_clone().unwrap()),
                 true,
@@ -275,9 +170,9 @@ mod tests {
             .is_err(),
             "Remote key is too big, must be 32 bytes"
         );
-        //        assert!(Connection::new(0x1FFFFFF, Box::new(file.try_clone().unwrap()), &mut rw, true, &[1; 32], &[2; 32]).is_err(), "ID is longer than 3 bytes");
+        //        assert!(StreamChanneled::new(0x1FFFFFF, Box::new(file.try_clone().unwrap()), &mut rw, true, &[1; 32], &[2; 32]).is_err(), "ID is longer than 3 bytes");
         assert!(
-            Connection::new(
+            StreamChanneled::new(
                 0xFF_FFFF,
                 Box::new(file.try_clone().unwrap()),
                 true,
@@ -285,10 +180,10 @@ mod tests {
                 &[2; 32]
             )
             .is_ok(),
-            "Can't create dummy connection"
+            "Can't create dummy stream_channeled"
         );
         assert!(
-            Connection::new(
+            StreamChanneled::new(
                 0xFF,
                 Box::new(file.try_clone().unwrap()),
                 true,
@@ -296,10 +191,10 @@ mod tests {
                 &[2; 32]
             )
             .is_ok(),
-            "Can't create dummy connection"
+            "Can't create dummy stream_channeled"
         );
         assert!(
-            Connection::new(
+            StreamChanneled::new(
                 0,
                 Box::new(file.try_clone().unwrap()),
                 true,
@@ -307,13 +202,13 @@ mod tests {
                 &[2; 32]
             )
             .is_ok(),
-            "Can't create dummy connection"
+            "Can't create dummy stream_channeled"
         );
     }
 
     #[test]
     fn test_read_write() {
-        let (mut conn, mut conn2) = connection_prelude();
+        let (mut conn, mut conn2) = stream_channeled_prelude();
 
         test_rw(true, conn.borrow_mut(), conn2.borrow_mut(), &[7; 100]);
         test_rw(true, conn2.borrow_mut(), conn.borrow_mut(), &[7; 100]);
@@ -331,8 +226,7 @@ mod tests {
     }
 
     //    #[test]
-    #[cfg(feature = "channels")]
-    fn test_channels(mut conn: Connection, mut conn2: Connection) {
+    fn test_channels(mut conn: StreamChanneled, mut conn2: StreamChanneled) {
         let mut chan = conn.get_channel(4);
         let mut chan_other = conn.get_channel(0xF);
 
@@ -375,14 +269,14 @@ mod tests {
     }
 
     #[cfg_attr(tarpaulin, skip)]
-    fn connection_prelude() -> (Connection, Connection) {
+    fn stream_channeled_prelude() -> (StreamChanneled, StreamChanneled) {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .open(TEST_FILE_PATH)
             .unwrap();
-        let conn = Connection::new(
+        let conn = StreamChanneled::new(
             0xFFFF,
             Box::new(file.try_clone().unwrap()),
             false,
@@ -399,7 +293,7 @@ mod tests {
             .write(true)
             .open(TEST_FILE_PATH)
             .unwrap();
-        let conn2 = Connection::new(
+        let conn2 = StreamChanneled::new(
             0xFFFF,
             Box::new(file2.try_clone().unwrap()),
             true,

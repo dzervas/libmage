@@ -8,7 +8,7 @@ use std::sync::RwLock;
 
 use lazy_static::lazy_static;
 
-use crate::connection::Connection;
+use crate::stream_channeled::StreamChanneled;
 use crate::transport::*;
 
 #[cfg(feature = "channels")]
@@ -53,7 +53,7 @@ macro_rules! const_test_listen {
 // Thread local is used instead of lazy_static, as the tests do not run with lazy_static.
 // They deadlock. While that's test-specific problem, I can see it rising on apps as well
 // The deadlock happens when you try to listen AND connect at the same time to yourself.
-// As `connect` blocks till it connects and `accept` blocks till it accepts a connection
+// As `connect` blocks till it connects and `accept` blocks till it accepts a stream_channeled
 // However, thread local means that in go for example you can't:
 // c := ffi_connect(...)
 // ch := ffi_get_channel(...)
@@ -66,7 +66,7 @@ macro_rules! const_test_listen {
 // Fuck.
 // 2020 ~ The Witcher
 lazy_static! {
-    static ref SOCKET: RwLock<Vec<RwLock<Connection>>> = RwLock::new(Vec::new());
+    static ref SOCKET: RwLock<Vec<RwLock<StreamChanneled>>> = RwLock::new(Vec::new());
     static ref ACCEPT: RwLock<Vec<RwLock<TRANSPORT>>> = RwLock::new(Vec::new());
 }
 
@@ -81,7 +81,7 @@ lazy_static! {
 fn _connect(addr: &str, listen: bool, seed: &[u8], key: &[u8]) -> usize {
     let new_conn = TRANSPORT::connect(addr).unwrap();
 
-    let conn = Connection::new(0, Box::new(new_conn), listen, seed, key).unwrap();
+    let conn = StreamChanneled::new(0, Box::new(new_conn), listen, seed, key).unwrap();
 
     new_socket(conn)
 }
@@ -112,12 +112,12 @@ fn _accept(socket: usize, listen: bool, seed: &[u8], key: &[u8]) -> usize {
             .unwrap()
     };
 
-    let conn = Connection::new(0, accepted, listen, seed, key).unwrap();
+    let conn = StreamChanneled::new(0, accepted, listen, seed, key).unwrap();
 
     new_socket(conn)
 }
 
-fn new_socket(conn: Connection) -> usize {
+fn new_socket(conn: StreamChanneled) -> usize {
     let mut socket_locked = SOCKET.write().unwrap();
 
     socket_locked.push(RwLock::new(conn));
@@ -128,7 +128,7 @@ fn new_socket(conn: Connection) -> usize {
     socket_locked.len() - 1 // len() is +1
 }
 
-// FFI API - Connection initialization
+// FFI API - StreamChanneled initialization
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn ffi_connect_opt(

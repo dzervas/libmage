@@ -1,7 +1,9 @@
 use std::io::{Error, ErrorKind, Read, Result, Write};
+use std::collections::HashMap;
 
 use super::error_str;
 use crate::packet::{Packet, PacketConfig};
+use crate::stream_channeled::{StreamChanneledIn, StreamChanneledOut};
 
 use sodiumoxide::crypto::{kx, secretstream};
 
@@ -13,7 +15,7 @@ enum State {
     Done,
 }
 
-fn exchange_keys<'a, R, W>(
+pub fn exchange_keys<'a, R, W>(
     reader: &'a mut R,
     writer: &'a mut W,
     is_server: bool,
@@ -115,6 +117,14 @@ impl<'a, T> StreamIn<'a, T>
 where
     T: Read,
 {
+    pub fn to_channeled(&mut self, id: u32) -> StreamChanneledIn<'a, T> {
+        StreamChanneledIn {
+            id,
+            stream_in: *self,
+            channels: HashMap::new()
+        }
+    }
+
     pub fn dechunk(&mut self) -> Result<Packet> {
         let mut read: usize = 0;
         let mut read_bytes: Vec<u8> = Vec::new();
@@ -178,6 +188,14 @@ impl<'a, T> StreamOut<'a, T>
 where
     T: Write,
 {
+    pub fn to_channeled(&mut self, id: u32) -> StreamChanneledOut<'a, T> {
+        StreamChanneledOut {
+            id,
+            stream_out: *self,
+            channels: HashMap::new()
+        }
+    }
+
     pub fn chunk(&mut self, id: u32, channel: u8, data: &[u8]) -> Result<()> {
         let mut i: u32 = 0;
         let mut chunked: usize = 0;

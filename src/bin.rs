@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 
-use mage::connection::Connection;
+use mage::stream_channeled::StreamChanneled;
 use mage::tool::{key, Address};
 use mage::transport::*;
 
@@ -63,7 +63,7 @@ enum Command {
         #[structopt(short = "k", long = "public-key")]
         public_key: String,
 
-        /// Proxy will listen for connections
+        /// Proxy will listen for stream_channeleds
         #[structopt(short = "l", long = "listen")]
         proxy_listen: bool,
 
@@ -136,18 +136,18 @@ fn main() {
             // TODO: This is temporary - select transport on runtime
             let conn = if mage_addr.listen {
                 let listener = Tcp::listen(host_port).unwrap();
-                //                println!("Listening for mage connection at {} over Tcp", host_port);
+                //                println!("Listening for mage stream_channeled at {} over Tcp", host_port);
                 listener.accept().unwrap()
             } else {
                 //                println!("Mage connecting to {} over Tcp", host_port);
                 Tcp::connect(host_port).unwrap()
             };
 
-            println!("Mage connection opened! Spawning communication thread");
+            println!("Mage stream_channeled opened! Spawning communication thread");
             // While it's wrong to assume that if we listen we're server,
             // it's safe to assume and it's just about the proxy tool
-            let mut connection = Box::new(
-                Connection::new(
+            let mut stream_channeled = Box::new(
+                StreamChanneled::new(
                     0,
                     Box::new(conn),
                     mage_addr.listen,
@@ -169,7 +169,7 @@ fn main() {
             // let mut proxy_buf2 = BufStream::new(proxy_conn);
             let mut proxy_conn2 = proxy_conn.try_clone().unwrap();
 
-            let ch = connection.get_channel(1);
+            let ch = stream_channeled.get_channel(1);
             let (conn_tx, conn_rx) = (ch.sender, ch.receiver);
 
             // if proxy_listen {
@@ -216,8 +216,8 @@ fn main() {
 
             println!("Starting mage loop");
             loop {
-                // connection.channel_loop_recv().unwrap();
-                connection.channel_loop().unwrap();
+                // stream_channeled.channel_loop_recv().unwrap();
+                stream_channeled.channel_loop().unwrap();
                 println!("Mage: something moved!")
             }
         }
