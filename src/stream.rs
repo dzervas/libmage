@@ -1,4 +1,4 @@
-use std::io::{Error, ErrorKind, Result};
+use std::io::{Error, ErrorKind, Read, Result, Write};
 
 use super::error_str;
 use crate::packet::{Packet, PacketConfig};
@@ -13,64 +13,72 @@ enum State {
     Done,
 }
 
-pub struct Stream {
-    packet_config: PacketConfig,
+fn exchange_keys<'a, R, W>(
+    reader: &'a mut R,
+    writer: &'a mut W,
+    is_server: bool,
+    private_key_seed: &[u8],
+    remote_public_key: &[u8],
+) -> Result<(StreamIn<'a, R>, StreamOut<'a, W>)>
+where
+    R: Read,
+    W: Write,
+{
+    // Remote "certificate" (public key) - can't recover from this...
+    let remote_public_key_kx = match kx::PublicKey::from_slice(remote_public_key) {
+        Some(d) => d,
+        None => {
+            return Err(error_str!(
+                "Unable to remote public key. Is the key 32 bytes?"
+            ))
+        }
+    };
 
-    state: State,
+    // Actual keypair from seed - can't recover from this...
+    let keys = kx::keypair_from_seed(&match kx::Seed::from_slice(private_key_seed) {
+        Some(d) => d,
+        None => {
+            return Err(error_str!(
+                "Unable to initialize keys from private seed. Is the seed 32 bytes?"
+            ))
+        }
+    });
 
-    header: secretstream::Header,
-    dec_key: secretstream::Key,
+    // Compute session keys
+    // These are the ephemeral keys generated after the Blake key exchange
+    // One has to be a "server" and one the "client" - which has nothing to do
+    // with actual network topology, it's only naming.
+    // Two parties have to have the opposite value in order to communicate
+    let (rx, tx) = if is_server {
+        kx::server_session_keys(&keys.0, &keys.1, &remote_public_key_kx).unwrap()
+    } else {
+        kx::client_session_keys(&keys.0, &keys.1, &remote_public_key_kx).unwrap()
+    };
 
-    enc_stream: secretstream::Stream<secretstream::Push>,
-    dec_stream: secretstream::Stream<secretstream::Pull>,
-}
+    let pull_bytes = rx.0;
+    let push_bytes = tx.0;
 
-impl Stream {
-    pub fn new(is_server: bool, private_key_seed: &[u8], remote_public_key: &[u8]) -> Result<Self> {
-        // Remote "certificate" (public key) - can't recover from this...
-        let remote_public_key_kx = match kx::PublicKey::from_slice(remote_public_key) {
-            Some(d) => d,
-            None => {
-                return Err(error_str!(
-                    "Unable to remote public key. Is the key 32 bytes?"
-                ))
-            }
-        };
+    // One stream is created to send data (push) and one to receive (pull)
+    let push_key = secretstream::Key::from_slice(&push_bytes).unwrap();
+    let pull_key = secretstream::Key::from_slice(&pull_bytes).unwrap();
 
-        // Actual keypair from seed - can't recover from this...
-        let keys = kx::keypair_from_seed(&match kx::Seed::from_slice(private_key_seed) {
-            Some(d) => d,
-            None => {
-                return Err(error_str!(
-                    "Unable to initialize keys from private seed. Is the seed 32 bytes?"
-                ))
-            }
-        });
+    let (pusher, header) = secretstream::Stream::init_push(&push_key).unwrap();
+    let mut remote_header_bytes: [u8; secretstream::HEADERBYTES];
 
-        // Compute session keys
-        // These are the ephemeral keys generated after the Blake key exchange
-        // One has to be a "server" and one the "client" - which has nothing to do
-        // with actual network topology, it's only naming.
-        // Two parties have to have the opposite value in order to communicate
-        let (rx, tx) = if is_server {
-            kx::server_session_keys(&keys.0, &keys.1, &remote_public_key_kx).unwrap()
-        } else {
-            kx::client_session_keys(&keys.0, &keys.1, &remote_public_key_kx).unwrap()
-        };
+    if is_server {
+        reader.read_exact(&mut remote_header_bytes)?;
+        writer.write_all(&header.0)?;
+    } else {
+        writer.write_all(&header.0)?;
+        reader.read_exact(&mut remote_header_bytes)?;
+    }
 
-        let pull_bytes = rx.0;
-        let push_bytes = tx.0;
+    let remote_header = secretstream::Header::from_slice(&remote_header_bytes)
+        .expect("Unable to decode remote header");
+    let puller = secretstream::Stream::init_pull(&remote_header, &pull_key).unwrap();
 
-        // One stream is created to send data (push) and one to receive (pull)
-        let push_key = secretstream::Key::from_slice(&push_bytes).unwrap();
-        let pull_key = secretstream::Key::from_slice(&pull_bytes).unwrap();
-
-        let (pusher, header) = secretstream::Stream::init_push(&push_key).unwrap();
-        // This is temporary. It's wrong, we have to use the other party's header
-        // in case it has different settings (???)
-        let puller = secretstream::Stream::init_pull(&header, &pull_key).unwrap();
-
-        Ok(Stream {
+    Ok((
+        StreamIn {
             // TODO: Make these per-transport configuratble
             packet_config: PacketConfig {
                 has_id: true,
@@ -78,150 +86,128 @@ impl Stream {
                 has_data_len: true,
                 max_size: 256 - secretstream::ABYTES,
             },
-            enc_stream: pusher,
-            dec_stream: puller,
-            state: State::Uninitialized,
-            header,
-            dec_key: pull_key,
-        })
-    }
+            reader,
+            puller,
+        },
+        StreamOut {
+            packet_config: PacketConfig {
+                has_id: true,
+                has_sequence: true,
+                has_data_len: true,
+                max_size: 256 - secretstream::ABYTES,
+            },
+            writer,
+            pusher,
+        },
+    ))
+}
 
-    pub fn chunk(&mut self, id: u32, channel: u8, data: &[u8]) -> Result<Vec<Vec<u8>>> {
-        let mut chunks: Vec<Vec<u8>> = Vec::new();
+pub struct StreamIn<'a, T>
+where
+    T: Read,
+{
+    packet_config: PacketConfig,
+    reader: &'a T,
+    puller: secretstream::Stream<secretstream::Pull>,
+}
 
-        if self.state != State::Done && self.state != State::SentHeader {
-            // Send the header to remote to init their decryption stream
-            chunks.push(self.header.0.to_vec());
-            if self.state == State::RecvHeader {
-                self.state = State::Done
+impl<'a, T> StreamIn<'a, T>
+where
+    T: Read,
+{
+    pub fn dechunk(&mut self) -> Result<Packet> {
+        let mut read: usize = 0;
+        let mut read_bytes: Vec<u8> = Vec::new();
+
+        let plaintext: Vec<u8> = Vec::new();
+        let _tag: secretstream::Tag = secretstream::Tag::Message;
+
+        for byte in self.reader.bytes() {
+            if let Err(e) = byte {
+                match e.kind() {
+                    ErrorKind::Interrupted | ErrorKind::UnexpectedEof | ErrorKind::WouldBlock => {}
+                    _ => return Err(e),
+                }
+            } else if read_bytes.len() >= secretstream::ABYTES + self.packet_config.max_size {
+                break;
             } else {
-                self.state = State::SentHeader
+                read_bytes.push(byte.unwrap());
             }
+
+            if read_bytes.len() <= secretstream::ABYTES {
+                continue;
+            }
+
+            // Do something with the tag?
+            match self.puller.pull(read_bytes.as_slice(), None) {
+                Ok(d) => {
+                    plaintext = d.0;
+                    _tag = d.1;
+                    break;
+                },
+                Err(_) => {}
+            };
         }
 
+        if plaintext.is_empty() {
+            return Err(error_str!("Could not decrypt packet"));
+        }
+
+        #[cfg(not(test))]
+        println!("Dechunked {}: {:?}", read_bytes.len(), read_bytes);
+
+        let (packet, _config, deserialized_bytes) = PacketConfig::deserialize(plaintext.as_slice());
+        // While I think it's a good idea to error out on different configs, max_size can't be
+        // calculated if we don't have data_len enabled, as a smaller packet will have smaller
+        // max_size (due to less data). Maybe I should implement that logic in the Eq trait
+
+        Ok(packet)
+    }
+}
+
+pub struct StreamOut<'a, T>
+where
+    T: Write,
+{
+    packet_config: PacketConfig,
+    writer: &'a T,
+    pusher: secretstream::Stream<secretstream::Push>,
+}
+
+impl<'a, T> StreamOut<'a, T>
+where
+    T: Write,
+{
+    pub fn chunk(&mut self, id: u32, channel: u8, data: &[u8]) -> Result<()> {
         let mut i: u32 = 0;
-        let mut written: usize = 0;
+        let mut chunked: usize = 0;
 
         while {
             let (plain, w) = match self
                 .packet_config
-                .serialize(id, channel, i, &data[written..])
+                .serialize(id, channel, i, &data[chunked..])
             {
                 Ok(d) => d,
                 Err(e) => return Err(e),
             };
 
-            written += w;
+            chunked += w;
             i += 1;
 
             // I can't find any case where encrypt fails
             let cipher = self
-                .enc_stream
+                .pusher
                 .push(&plain.as_slice(), None, secretstream::Tag::Message)
                 .unwrap();
             #[cfg(not(test))]
             println!("Chunked {}: {:?}", cipher.len(), &cipher);
-            chunks.push(cipher);
+            self.writer.write_all(&mut cipher.as_slice())?;
 
             // NOTE: This is do..while, check https://gist.github.com/huonw/8435502
-            written < data.len()
+            chunked < data.len()
         } {}
 
-        Ok(chunks)
-    }
-
-    pub fn dechunk(&mut self, mut chunks: &[u8]) -> Result<Vec<Packet>> {
-        let mut result: Vec<Packet> = Vec::new();
-
-        if self.state != State::Done && self.state != State::RecvHeader {
-            // Parse the header and init the decryption stream
-            if chunks.len() < secretstream::HEADERBYTES {
-                return Err(error_str!(
-                    "Could not initialize the decryption stream (received header too small?)"
-                ));
-            }
-
-            let header =
-                secretstream::Header::from_slice(&chunks[..secretstream::HEADERBYTES]).unwrap();
-            // I can't find any case where decryption init fails
-            self.dec_stream = secretstream::Stream::init_pull(&header, &self.dec_key).unwrap();
-
-            chunks = &chunks[secretstream::HEADERBYTES..];
-
-            if self.state == State::SentHeader {
-                self.state = State::Done
-            } else {
-                self.state = State::RecvHeader
-            }
-        }
-
-        // 2 is the minimum mage header
-        if chunks.len() < 2 {
-            return Ok(Vec::new());
-        }
-
-        let mut read: usize = 0;
-
-        while {
-            let max_size =
-                if chunks.len() > self.packet_config.max_size + read + secretstream::ABYTES {
-                    read + self.packet_config.max_size + secretstream::ABYTES
-                } else {
-                    chunks.len()
-                };
-            #[cfg(not(test))]
-            println!(
-                "Dechunking {}: {:?}",
-                chunks[read..max_size].len(),
-                &chunks[read..max_size]
-            );
-
-            // Do something with the tag?
-            let (plain, _tag) = match self.dec_stream.pull(&chunks[read..max_size], None) {
-                Ok(d) => d,
-                Err(_) => return Err(error_str!("Could not decrypt packet")),
-            };
-
-            let (pack, _pc, r) = PacketConfig::deserialize(plain.as_slice());
-            // While I think it's a good idea to error out on different configs, max_size can't be
-            // calculated if we don't have data_len enabled, as a smaller packet will have smaller
-            // max_size (due to less data). Maybe I should implement that logic in the Eq trait
-            //            if pc != self.packet_config { return Err(Box::new(StreamError::PacketConfigDiffersError)) }
-
-            read += r + secretstream::ABYTES;
-            result.push(pack);
-
-            // NOTE: This is do..while, check https://gist.github.com/huonw/8435502
-            read < chunks.len()
-        } {}
-
-        if self.packet_config.has_sequence {
-            result.sort()
-        }
-
-        Ok(result)
-    }
-
-    // Settings
-    #[allow(dead_code)]
-    pub fn id(&mut self, v: bool) -> &mut Self {
-        self.packet_config.has_id = v;
-        self
-    }
-    #[allow(dead_code)]
-    pub fn sequence(&mut self, v: bool) -> &mut Self {
-        self.packet_config.has_sequence = v;
-        self
-    }
-    #[allow(dead_code)]
-    pub fn data_len(&mut self, v: bool) -> &mut Self {
-        self.packet_config.has_data_len = v;
-        self
-    }
-    #[allow(dead_code)]
-    pub fn max_size(&mut self, v: usize) -> &mut Self {
-        self.packet_config.max_size = v;
-        self
+        Ok(())
     }
 }
 
