@@ -235,7 +235,7 @@ pub extern "C" fn ffi_get_channel_recv(socket: usize, channel: u8) -> usize {
     let mut channel_locked = CHANNEL_RECV.write().unwrap();
 
     channel_locked.push(Mutex::new(chan));
-    println!("Channel RECV state: {:?}", channel_locked);
+    println!("Channel RECV[{}] state: {:?}", channel_locked.len(), channel_locked);
 
     channel_locked.len() - 1
 }
@@ -252,7 +252,7 @@ pub extern "C" fn ffi_get_channel_send(socket: usize, channel: u8) -> usize {
     let mut channel_locked = CHANNEL_SEND.write().unwrap();
 
     channel_locked.push(Mutex::new(chan));
-    println!("Channel SEND state: {:?}", channel_locked);
+    println!("Channel SEND[{}] state: {:?}", channel_locked.len(), channel_locked);
 
     channel_locked.len() - 1
 }

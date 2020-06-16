@@ -17,6 +17,7 @@ func HelpListen(t *testing.T, finished chan bool) {
 	}
 
 	c := l.Accept(seed, [32]byte{171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111})
+	ch := c.GetChannel(5)
 
 	buf := []byte("Hello")
 	fmt.Println("[Go] (L) Reading")
@@ -29,14 +30,14 @@ func HelpListen(t *testing.T, finished chan bool) {
 	}
 
 	time.Sleep(time.Second) // Wait for channel loop to start
-	time.Sleep(time.Second) // Wait for channel loop to start
 	fmt.Println("===============")
-	ch := c.GetChannel(5) // 0 is the default used channel
 	fmt.Println("\t[Go] Channels:")
 
 	fmt.Println("\t[Go] (L) Writing")
 	ch.Write([]byte("hoho!"))
+	c.ChannelLoopOut()
 	fmt.Println("\t[Go] (L) Reading")
+	c.ChannelLoopIn()
 	ch.Read(buf)
 	if string(buf) != "hoho!" {
 		t.Errorf("buf should be 'hoho!', but it's '%s'", buf)
@@ -73,9 +74,9 @@ func TestListenConnect(t *testing.T) {
 	go HelpListen(t, listenFinish)
 	time.Sleep(time.Second) // Wait for listener to start
 	c := HelpConnect(t)
+	ch := c.GetChannel(5)
 	time.Sleep(time.Second) // Wait for channel loop to start
 
-	ch := c.GetChannel(5) // 0 is the default used channel
 	buf := []byte("haha!")
 
 	fmt.Println("\t[Go] Read")
