@@ -36,11 +36,10 @@ url = "*"
 [features]
 default = ["ffi", "trans_tcp"]
 
-channels = []
 ffi = ["lazy_static"]
 
-#      |         Crates             |         Features         |
-tool = ["base64", "structopt", "url", "channels", "trans_socks"]
+#      |         Crates             | Features     |
+tool = ["base64", "structopt", "url", "trans_socks"]
 
 # Transports
 trans_tcp = []

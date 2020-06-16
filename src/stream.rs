@@ -1,9 +1,7 @@
 use std::io::{Error, ErrorKind, Read, Result, Write};
-use std::collections::HashMap;
 
 use super::error_str;
 use crate::packet::{Packet, PacketConfig};
-use crate::stream_channeled::{StreamChanneledIn, StreamChanneledOut};
 
 use sodiumoxide::crypto::{kx, secretstream};
 
@@ -102,14 +100,6 @@ pub struct StreamIn
 
 impl StreamIn
 {
-    pub fn to_channeled(self, id: u32) -> StreamChanneledIn {
-        StreamChanneledIn {
-            id,
-            stream_in: self,
-            channels: HashMap::new()
-        }
-    }
-
     pub fn dechunk(&mut self) -> Result<Packet> {
         let mut read_bytes: Vec<u8> = Vec::new();
 
@@ -167,14 +157,6 @@ pub struct StreamOut
 
 impl StreamOut
 {
-    pub fn to_channeled(self, id: u32) -> StreamChanneledOut {
-        StreamChanneledOut {
-            id,
-            stream_out: self,
-            channels: HashMap::new()
-        }
-    }
-
     pub fn chunk(&mut self, id: u32, channel: u8, data: &[u8]) -> Result<()> {
         let mut i: u32 = 0;
         let mut chunked: usize = 0;
@@ -212,30 +194,79 @@ impl StreamOut
 mod tests {
     use super::*;
     use std::borrow::BorrowMut;
+    use std::fs::OpenOptions;
 
     // Known keys: vec![1; 32] -> public vec![171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111]
     // Known keys: vec![2; 32] -> public vec![252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6]
 
+    #[cfg(target_os = "windows")]
+    const TEST_FILE_PATH: &str = ".mage-test.tmp";
+
+    #[cfg(not(target_os = "windows"))]
+    const TEST_FILE_PATH: &str = ".mage-test.tmp";
+
+    #[cfg_attr(tarpaulin, skip)]
+    fn stream_prelude() -> ((StreamIn, StreamOut), (StreamIn, StreamOut)) {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(TEST_FILE_PATH)
+            .unwrap();
+        let file_clone = file.try_clone().unwrap();
+
+        let conn = exchange_keys(Box::new(file), Box::new(file_clone), false, &[1; 32],
+            &[
+                252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129,
+                123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6,
+            ],
+    ).unwrap();
+
+        let file2 = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(TEST_FILE_PATH)
+            .unwrap();
+        let file2_clone = file2.try_clone().unwrap();
+
+        let conn2 = exchange_keys(Box::new(file2), Box::new(file2_clone), true, &[2; 32],
+            &[
+                171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85,
+                198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111,
+            ],
+    ).unwrap();
+
+        (conn, conn2)
+    }
+
     #[test]
-    fn new() {
+    fn test_exchange_keys() {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(TEST_FILE_PATH)
+            .unwrap();
+        let file_clone = file.try_clone().unwrap();
+
         assert!(
-            Stream::new(true, vec![1; 32].as_slice(), vec![2; 32].as_slice()).is_ok(),
+            exchange_keys(Box::new(file), Box::new(file_clone), true, vec![1; 32].as_slice(), vec![2; 32].as_slice()).is_ok(),
             "A stream should be able to get created with the above config"
         );
         assert!(
-            Stream::new(false, vec![1; 31].as_slice(), vec![2; 32].as_slice()).is_err(),
+            exchange_keys(Box::new(file), Box::new(file_clone), false, vec![1; 31].as_slice(), vec![2; 32].as_slice()).is_err(),
             "Key seed is too small, must be 32 bytes"
         );
         assert!(
-            Stream::new(true, vec![1; 33].as_slice(), vec![2; 32].as_slice()).is_err(),
+            exchange_keys(Box::new(file), Box::new(file_clone), true, vec![1; 33].as_slice(), vec![2; 32].as_slice()).is_err(),
             "Key seed is too big, must be 32 bytes"
         );
         assert!(
-            Stream::new(false, vec![1; 32].as_slice(), vec![2; 31].as_slice()).is_err(),
+            exchange_keys(Box::new(file), Box::new(file_clone), false, vec![1; 32].as_slice(), vec![2; 31].as_slice()).is_err(),
             "Remote key is too small, must be 32 bytes"
         );
         assert!(
-            Stream::new(true, vec![1; 32].as_slice(), vec![2; 33].as_slice()).is_err(),
+            exchange_keys(Box::new(file), Box::new(file_clone), true, vec![1; 32].as_slice(), vec![2; 33].as_slice()).is_err(),
             "Remote key seed is too big, must be 32 bytes"
         );
     }
@@ -243,99 +274,68 @@ mod tests {
     #[test]
     fn chunk_dechunk() {
         // TODO: Test out-of-order and lost chunks
-        let mut server = Stream::new(
-            true,
-            &[2; 32],
-            vec![
-                171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85,
-                198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111,
-            ]
-            .as_slice(),
-        )
-        .unwrap();
-        let mut client = Stream::new(
-            false,
-            &[1; 32],
-            vec![
-                252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129,
-                123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6,
-            ]
-            .as_slice(),
-        )
-        .unwrap();
+        let (client, server) = stream_prelude();
+        let (mut client_in, mut client_out) = client;
+        let (mut server_in, mut server_out) = server;
 
-        let chunked = client.chunk(0, 0, &[1; 2]).unwrap();
-        let mut data: Vec<u8> = Vec::new();
+        let chunked = client_out.chunk(0, 0, &[1; 2]).unwrap();
+        let data = server_in.dechunk().unwrap();
 
-        for chunk in chunked {
-            data.extend(chunk);
-        }
+        client_out.packet_config.max_size = 100;
+        server_out.packet_config.max_size = 100;
 
-        assert!(
-            server.dechunk(&data[..3]).is_err(),
-            "Server shouldn't be able to even initialize the ephemeral key"
-        );
-        assert!(
-            server.dechunk(&data[..]).is_ok(),
-            "Server should be able to dechunk this and initialize the ephemeral key"
-        );
-        assert!(
-            server.dechunk(&data[..3]).is_err(),
-            "Server shouldn't be able to dechunk partial messages"
-        );
+        test_stream_chunking(true, client_out.borrow_mut(), server_in.borrow_mut(), 0, 0, &[]);
+        test_stream_chunking(true, server_out.borrow_mut(), client_in.borrow_mut(), 0, 0, &[]);
 
-        client.max_size(100);
-        server.max_size(100);
-
-        test_stream_chunking(true, client.borrow_mut(), server.borrow_mut(), 0, 0, &[]);
-        test_stream_chunking(true, server.borrow_mut(), client.borrow_mut(), 0, 0, &[]);
-        client.id(false);
+        client_out.packet_config.has_id = false;
         test_stream_chunking(
             true,
-            client.borrow_mut(),
-            server.borrow_mut(),
+            client_out.borrow_mut(),
+            server_in.borrow_mut(),
             13,
             8,
             &[3u8; 4],
         );
         test_stream_chunking(
             true,
-            server.borrow_mut(),
-            client.borrow_mut(),
+            server_out.borrow_mut(),
+            client_in.borrow_mut(),
             13,
             8,
             &[3u8; 4],
         );
-        client.data_len(false);
+
+        client_out.packet_config.has_data_len = false;
         test_stream_chunking(
             false,
-            server.borrow_mut(),
-            client.borrow_mut(),
+            server_out.borrow_mut(),
+            client_in.borrow_mut(),
             0x1FF_FFFF,
             8,
             &[4u8; 512],
         );
         test_stream_chunking(
             false,
-            server.borrow_mut(),
-            client.borrow_mut(),
+            server_out.borrow_mut(),
+            client_in.borrow_mut(),
             0x1_FFFF,
             0x1F,
             &[4u8; 512],
         );
-        client.sequence(false);
+
+        client_out.packet_config.has_sequence = false;
         test_stream_chunking(
             true,
-            client.borrow_mut(),
-            server.borrow_mut(),
+            client_out.borrow_mut(),
+            server_in.borrow_mut(),
             13,
             8,
             &[4u8; 512],
         );
         test_stream_chunking(
             true,
-            server.borrow_mut(),
-            client.borrow_mut(),
+            server_out.borrow_mut(),
+            client_in.borrow_mut(),
             13,
             8,
             &[4u8; 512],
@@ -345,40 +345,31 @@ mod tests {
     #[cfg_attr(tarpaulin, skip)]
     fn test_stream_chunking(
         succ: bool,
-        a: &mut Stream,
-        b: &mut Stream,
+        a: &mut StreamOut,
+        b: &mut StreamIn,
         id: u32,
         ch: u8,
         data: &[u8],
     ) {
-        let chunked = match a.chunk(id, ch, &data) {
-            Ok(c) => c,
-            Err(_e) => {
-                return assert!(!succ, "Chunk should have been created!");
-            }
-        };
-        let mut aligned: Vec<u8> = Vec::new();
-        let mut findat: Vec<u8> = Vec::new();
-
-        for chunk in chunked {
-            aligned.extend(chunk);
+        if let Err(_) = a.chunk(id, ch, &data) {
+            return assert!(!succ, "Chunk should have been created!");
         }
 
-        let dechunked = match b.dechunk(aligned.as_slice()) {
+        let dechunked = match b.dechunk() {
             Ok(d) => d,
-            Err(_e) => {
+            Err(_) => {
                 return assert!(!succ, "Chunk should have been created!");
             }
         };
-
-        for d in dechunked {
-            findat.extend(d.data);
-        }
 
         if succ {
-            assert_eq!(&data, &findat.as_slice());
+            assert_eq!(data, dechunked.data.as_slice());
+            assert_eq!(ch, dechunked.get_channel());
+            assert_eq!(id, dechunked.id);
         } else {
-            assert_ne!(&data, &findat.as_slice());
+            assert_ne!(data, dechunked.data.as_slice());
+            assert_ne!(ch, dechunked.get_channel());
+            assert_ne!(id, dechunked.id);
         }
     }
 }

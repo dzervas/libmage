@@ -4,13 +4,11 @@ use std::ffi::CStr;
 use std::io::{Read, Write};
 use std::os::raw::c_void;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Mutex, RwLock};
 
 use lazy_static::lazy_static;
 
 use crate::stream::{exchange_keys, StreamIn, StreamOut};
-use crate::stream_channeled::{StreamChanneledIn, StreamChanneledOut};
 use crate::transport::*;
 
 #[cfg(not(test))]
@@ -52,11 +50,8 @@ macro_rules! const_test_listen {
 lazy_static! {
     static ref ACCEPT: RwLock<Vec<Mutex<TRANSPORT>>> = RwLock::new(Vec::new());
 
-    static ref SOCKET_IN: RwLock<Vec<Mutex<StreamChanneledIn>>> = RwLock::new(Vec::new());
-    static ref SOCKET_OUT: RwLock<Vec<Mutex<StreamChanneledOut>>> = RwLock::new(Vec::new());
-
-    static ref CHANNEL_SEND: RwLock<Vec<Mutex<Sender<Vec<u8>>>>> = RwLock::new(Vec::new());
-    static ref CHANNEL_RECV: RwLock<Vec<Mutex<Receiver<Vec<u8>>>>> = RwLock::new(Vec::new());
+    static ref SOCKET_IN: RwLock<Vec<Mutex<StreamIn>>> = RwLock::new(Vec::new());
+    static ref SOCKET_OUT: RwLock<Vec<Mutex<StreamOut>>> = RwLock::new(Vec::new());
 }
 
 // TODO: Handle all panics - not supported by FFI, undefined behaviour
@@ -102,13 +97,10 @@ fn _accept(socket: usize, listen: bool, seed: &[u8], key: &[u8]) -> usize {
 }
 
 fn new_socket(stream_in: StreamIn, stream_out: StreamOut) -> usize {
-    let channeled_in = stream_in.to_channeled(0);
-    let channeled_out = stream_out.to_channeled(0);
-
     let sockets_in_len = {
         let mut socket_locked = SOCKET_IN.write().unwrap();
 
-        socket_locked.push(Mutex::new(channeled_in));
+        socket_locked.push(Mutex::new(stream_in));
 
         #[cfg(not(test))]
         println!("New socket in: {}", socket_locked.len() - 1);
@@ -119,7 +111,7 @@ fn new_socket(stream_in: StreamIn, stream_out: StreamOut) -> usize {
     let _sockets_out_len = {
         let mut socket_locked = SOCKET_OUT.write().unwrap();
 
-        socket_locked.push(Mutex::new(channeled_out));
+        socket_locked.push(Mutex::new(stream_out));
 
         #[cfg(not(test))]
         println!("New socket out: {}", socket_locked.len() - 1);
@@ -131,7 +123,7 @@ fn new_socket(stream_in: StreamIn, stream_out: StreamOut) -> usize {
     sockets_in_len
 }
 
-// FFI API - StreamChanneled initialization
+// FFI API - Stream initialization
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn ffi_connect_opt(
@@ -201,7 +193,7 @@ pub extern "C" fn ffi_send(socket: usize, msg: *const c_void, size: usize) -> us
     let socket_locked = SOCKET_OUT.read().unwrap();
 
     let mut sock = socket_locked.get(socket).unwrap().lock().unwrap();
-    sock.write_stream(0, buf).unwrap();
+    sock.chunk(0, 0, buf).unwrap();
     buf.len()
 }
 
@@ -212,97 +204,14 @@ pub extern "C" fn ffi_recv(socket: usize, msg: *mut c_void, size: usize) -> usiz
     let socket_locked = SOCKET_IN.read().unwrap();
 
     let mut sock = socket_locked.get(socket).unwrap().lock().unwrap();
-    let (channel, data) = sock.read_stream().unwrap();
+    let packet = sock.dechunk().unwrap();
 
-    if channel != 0 {
+    if packet.get_channel() != 0 {
         return 0;
     }
 
-    buf.copy_from_slice(data.as_slice());
-    data.len()
-}
-
-// FFI API - Channel handling interface
-#[no_mangle]
-pub extern "C" fn ffi_get_channel_recv(socket: usize, channel: u8) -> usize {
-    let chan = {
-        let socket_locked = SOCKET_IN.read().unwrap();
-
-        let mut sock = socket_locked.get(socket).unwrap().lock().unwrap();
-        sock.get_channel_recv(channel)
-    };
-
-    let mut channel_locked = CHANNEL_RECV.write().unwrap();
-
-    channel_locked.push(Mutex::new(chan));
-    println!("Channel RECV[{}] state: {:?}", channel_locked.len(), channel_locked);
-
-    channel_locked.len() - 1
-}
-
-#[no_mangle]
-pub extern "C" fn ffi_get_channel_send(socket: usize, channel: u8) -> usize {
-    let chan = {
-        let socket_locked = SOCKET_OUT.read().unwrap();
-
-        let mut sock = socket_locked.get(socket).unwrap().lock().unwrap();
-        sock.get_channel_send(channel)
-    };
-
-    let mut channel_locked = CHANNEL_SEND.write().unwrap();
-
-    channel_locked.push(Mutex::new(chan));
-    println!("Channel SEND[{}] state: {:?}", channel_locked.len(), channel_locked);
-
-    channel_locked.len() - 1
-}
-
-#[no_mangle]
-pub extern "C" fn ffi_channel_propagate_in(socket: usize) {
-    let socket_locked = SOCKET_IN.read().unwrap();
-    let mut sock = socket_locked.get(socket).unwrap().lock().unwrap();
-
-    let (channel, data) = sock.read_stream().unwrap();
-    sock.write_channels(channel, data).unwrap();
-}
-
-#[no_mangle]
-pub extern "C" fn ffi_channel_propagate_out(socket: usize) {
-    let socket_locked = SOCKET_OUT.read().unwrap();
-    let mut sock = socket_locked.get(socket).unwrap().lock().unwrap();
-
-    let data = sock.read_channels().unwrap();
-
-    for (channel, packet) in data {
-        for p in packet {
-            sock.write_stream(channel, p.as_slice()).unwrap();
-        }
-    }
-}
-
-// FFI API - Channel data transfer interface
-#[no_mangle]
-pub extern "C" fn ffi_send_channel(channel: usize, msg: *mut c_void, size: usize) -> usize {
-    let buf = unsafe { from_raw_parts_mut(msg as *mut u8, size) };
-
-    let channel_locked = CHANNEL_SEND.read().unwrap();
-    let chan = channel_locked.get(channel).unwrap().lock().unwrap();
-
-    chan.send(buf.to_vec()).unwrap();
-    buf.len()
-}
-
-#[no_mangle]
-pub extern "C" fn ffi_recv_channel(channel: usize, msg: *mut c_void, size: usize) -> usize {
-    let buf = unsafe { from_raw_parts_mut(msg as *mut u8, size) };
-
-    let channel_locked = CHANNEL_RECV.read().unwrap();
-    let chan = channel_locked.get(channel).unwrap().lock().unwrap();
-
-    let data = chan.recv().unwrap();
-
-    buf.copy_from_slice(data.as_slice());
-    buf.len()
+    buf.copy_from_slice(packet.data.as_slice());
+    packet.data.len()
 }
 
 #[cfg(test)]
