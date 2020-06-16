@@ -261,6 +261,7 @@ mod tests {
 
     // TODO: Test this using a network protocol, plain file does not work
     // #[test]
+    #[allow(dead_code)]
     fn chunk_dechunk() {
         // TODO: Test out-of-order and lost chunks
         let (client, server) = stream_prelude();

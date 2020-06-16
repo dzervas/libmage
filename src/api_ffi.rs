@@ -242,7 +242,7 @@ mod tests {
 
         let sock = ffi_accept(listener);
 
-        let mut data = [4; 1000000];
+        let mut data = [4; 100];
 
         test_send(sock, data.to_vec());
         test_recv(sock, &mut data);

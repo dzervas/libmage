@@ -1,7 +1,6 @@
 extern crate url;
 
 pub mod key;
-pub mod proxy;
 
 use url::Url;
 
@@ -17,7 +16,7 @@ impl Address {
     pub fn parse(address: String) -> Address {
         // TODO: Remove unwraps and return Result
         let url = Url::parse(address.as_str()).unwrap();
-        let scheme_parts = url.scheme().split("+").collect::<Vec<&str>>();
+        let scheme_parts = url.scheme().split('+').collect::<Vec<&str>>();
         let listen = match scheme_parts.get(1) {
             Some(d) => d == &"listen",
             None => false,
