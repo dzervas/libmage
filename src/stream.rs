@@ -54,13 +54,8 @@ pub fn exchange_keys(
     let (pusher, header) = secretstream::Stream::init_push(&push_key).unwrap();
     let mut remote_header_bytes: [u8; secretstream::HEADERBYTES] = [0; secretstream::HEADERBYTES];
 
-    if is_server {
-        reader.read_exact(&mut remote_header_bytes)?;
-        writer.write_all(&header.0)?;
-    } else {
-        writer.write_all(&header.0)?;
-        reader.read_exact(&mut remote_header_bytes)?;
-    }
+    writer.write_all(&header.0)?;
+    reader.read_exact(&mut remote_header_bytes)?;
 
     let remote_header = secretstream::Header::from_slice(&remote_header_bytes)
         .expect("Unable to decode remote header");
@@ -180,7 +175,7 @@ impl StreamOut
                 .unwrap();
             #[cfg(not(test))]
             println!("Chunked {}: {:?}", cipher.len(), &cipher);
-            self.writer.write_all(&mut cipher.as_slice())?;
+            self.writer.write_all(&cipher.as_slice())?;
 
             // NOTE: This is do..while, check https://gist.github.com/huonw/8435502
             chunked < data.len()
@@ -193,7 +188,6 @@ impl StreamOut
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::borrow::BorrowMut;
     use std::fs::OpenOptions;
 
     // Known keys: vec![1; 32] -> public vec![171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111]
@@ -205,14 +199,20 @@ mod tests {
     #[cfg(not(target_os = "windows"))]
     const TEST_FILE_PATH: &str = ".mage-test.tmp";
 
+    macro_rules! open_test_file {
+        () => {
+            OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .open(TEST_FILE_PATH)
+                .unwrap()
+        };
+    }
+
     #[cfg_attr(tarpaulin, skip)]
     fn stream_prelude() -> ((StreamIn, StreamOut), (StreamIn, StreamOut)) {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(TEST_FILE_PATH)
-            .unwrap();
+        let file = open_test_file!();
         let file_clone = file.try_clone().unwrap();
 
         let conn = exchange_keys(Box::new(file), Box::new(file_clone), false, &[1; 32],
@@ -220,13 +220,9 @@ mod tests {
                 252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129,
                 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6,
             ],
-    ).unwrap();
+        ).unwrap();
 
-        let file2 = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(TEST_FILE_PATH)
-            .unwrap();
+        let file2 = open_test_file!();
         let file2_clone = file2.try_clone().unwrap();
 
         let conn2 = exchange_keys(Box::new(file2), Box::new(file2_clone), true, &[2; 32],
@@ -234,39 +230,31 @@ mod tests {
                 171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85,
                 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111,
             ],
-    ).unwrap();
+        ).unwrap();
 
         (conn, conn2)
     }
 
     #[test]
     fn test_exchange_keys() {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(TEST_FILE_PATH)
-            .unwrap();
-        let file_clone = file.try_clone().unwrap();
-
         assert!(
-            exchange_keys(Box::new(file), Box::new(file_clone), true, vec![1; 32].as_slice(), vec![2; 32].as_slice()).is_ok(),
+            exchange_keys(Box::new(open_test_file!()), Box::new(open_test_file!()), true, vec![1; 32].as_slice(), vec![2; 32].as_slice()).is_ok(),
             "A stream should be able to get created with the above config"
         );
         assert!(
-            exchange_keys(Box::new(file), Box::new(file_clone), false, vec![1; 31].as_slice(), vec![2; 32].as_slice()).is_err(),
+            exchange_keys(Box::new(open_test_file!()), Box::new(open_test_file!()), false, vec![1; 31].as_slice(), vec![2; 32].as_slice()).is_err(),
             "Key seed is too small, must be 32 bytes"
         );
         assert!(
-            exchange_keys(Box::new(file), Box::new(file_clone), true, vec![1; 33].as_slice(), vec![2; 32].as_slice()).is_err(),
+            exchange_keys(Box::new(open_test_file!()), Box::new(open_test_file!()), true, vec![1; 33].as_slice(), vec![2; 32].as_slice()).is_err(),
             "Key seed is too big, must be 32 bytes"
         );
         assert!(
-            exchange_keys(Box::new(file), Box::new(file_clone), false, vec![1; 32].as_slice(), vec![2; 31].as_slice()).is_err(),
+            exchange_keys(Box::new(open_test_file!()), Box::new(open_test_file!()), false, vec![1; 32].as_slice(), vec![2; 31].as_slice()).is_err(),
             "Remote key is too small, must be 32 bytes"
         );
         assert!(
-            exchange_keys(Box::new(file), Box::new(file_clone), true, vec![1; 32].as_slice(), vec![2; 33].as_slice()).is_err(),
+            exchange_keys(Box::new(open_test_file!()), Box::new(open_test_file!()), true, vec![1; 32].as_slice(), vec![2; 33].as_slice()).is_err(),
             "Remote key seed is too big, must be 32 bytes"
         );
     }
@@ -278,28 +266,28 @@ mod tests {
         let (mut client_in, mut client_out) = client;
         let (mut server_in, mut server_out) = server;
 
-        let chunked = client_out.chunk(0, 0, &[1; 2]).unwrap();
-        let data = server_in.dechunk().unwrap();
+        let _chunked = client_out.chunk(0, 0, &[1; 2]).unwrap();
+        let _data = server_in.dechunk().unwrap();
 
         client_out.packet_config.max_size = 100;
         server_out.packet_config.max_size = 100;
 
-        test_stream_chunking(true, client_out.borrow_mut(), server_in.borrow_mut(), 0, 0, &[]);
-        test_stream_chunking(true, server_out.borrow_mut(), client_in.borrow_mut(), 0, 0, &[]);
+        test_stream_chunking(true, &mut client_out, &mut server_in, 0, 0, &[]);
+        test_stream_chunking(true, &mut server_out, &mut client_in, 0, 0, &[]);
 
         client_out.packet_config.has_id = false;
         test_stream_chunking(
             true,
-            client_out.borrow_mut(),
-            server_in.borrow_mut(),
+            &mut client_out,
+            &mut server_in,
             13,
             8,
             &[3u8; 4],
         );
         test_stream_chunking(
             true,
-            server_out.borrow_mut(),
-            client_in.borrow_mut(),
+            &mut server_out,
+            &mut client_in,
             13,
             8,
             &[3u8; 4],
@@ -308,16 +296,16 @@ mod tests {
         client_out.packet_config.has_data_len = false;
         test_stream_chunking(
             false,
-            server_out.borrow_mut(),
-            client_in.borrow_mut(),
+            &mut server_out,
+            &mut client_in,
             0x1FF_FFFF,
             8,
             &[4u8; 512],
         );
         test_stream_chunking(
             false,
-            server_out.borrow_mut(),
-            client_in.borrow_mut(),
+            &mut server_out,
+            &mut client_in,
             0x1_FFFF,
             0x1F,
             &[4u8; 512],
@@ -326,16 +314,16 @@ mod tests {
         client_out.packet_config.has_sequence = false;
         test_stream_chunking(
             true,
-            client_out.borrow_mut(),
-            server_in.borrow_mut(),
+            &mut client_out,
+            &mut server_in,
             13,
             8,
             &[4u8; 512],
         );
         test_stream_chunking(
             true,
-            server_out.borrow_mut(),
-            client_in.borrow_mut(),
+            &mut server_out,
+            &mut client_in,
             13,
             8,
             &[4u8; 512],
@@ -351,14 +339,14 @@ mod tests {
         ch: u8,
         data: &[u8],
     ) {
-        if let Err(_) = a.chunk(id, ch, &data) {
-            return assert!(!succ, "Chunk should have been created!");
+        if let Err(e) = a.chunk(id, ch, &data) {
+            return assert!(!succ, format!("Chunk should have been created! {:?}", e));
         }
 
         let dechunked = match b.dechunk() {
             Ok(d) => d,
-            Err(_) => {
-                return assert!(!succ, "Chunk should have been created!");
+            Err(e) => {
+                return assert!(!succ, format!("Chunk should have been created! {:?}", e));
             }
         };
 

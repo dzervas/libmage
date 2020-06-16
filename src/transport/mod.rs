@@ -43,7 +43,6 @@ impl<T: Listener + Connector + Sized + Send> Transport for T {}
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use std::borrow::BorrowMut;
     use std::thread::{sleep, spawn};
     use std::time::Duration;
 
@@ -70,23 +69,23 @@ pub mod tests {
 
         let thread = spawn(move || {
             let listener = assert_cond!(succ, T::listen(addr));
-            let mut rw = listener.accept().unwrap();
+            let (mut reader, mut writer) = listener.accept().unwrap();
 
-            let buffer = c2l_clone.borrow_mut();
+            let buffer = &mut c2l_clone;
 
-            rw.read_exact(buffer).unwrap();
-            rw.write_all(l2c_clone.as_slice()).unwrap();
+            reader.read_exact(buffer).unwrap();
+            writer.write_all(l2c_clone.as_slice()).unwrap();
 
             assert_eq!(buffer.to_vec(), c2l_clone);
         });
 
         sleep(Duration::from_millis(100));
-        let mut rw = T::connect(addr).unwrap();
+        let (mut reader, mut writer) = T::connect(addr).unwrap();
 
         let buffer = l2c.as_mut();
 
-        rw.write_all(c2l.as_slice()).unwrap();
-        rw.read_exact(buffer).unwrap();
+        writer.write_all(c2l.as_slice()).unwrap();
+        reader.read_exact(buffer).unwrap();
 
         assert_eq!(buffer.to_vec(), l2c);
 

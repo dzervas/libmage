@@ -145,9 +145,7 @@ fn main() {
             println!("Mage stream_channeled opened! Spawning communication thread");
             // While it's wrong to assume that if we listen we're server,
             // it's safe to assume and it's just about the proxy tool
-            let (stream_in, stream_out) = exchange_keys(conn.0, conn.1, mage_addr.listen, seed.as_slice(), remote_key.as_slice()).unwrap();
-            let mut channeled_in = stream_in.to_channeled(1);
-            let mut channeled_out = stream_out.to_channeled(1);
+            let (mut stream_in, mut stream_out) = exchange_keys(conn.0, conn.1, mage_addr.listen, seed.as_slice(), remote_key.as_slice()).unwrap();
             println!("AAA");
 
             let mut proxy_conn = if proxy_listen {
@@ -157,77 +155,36 @@ fn main() {
                 TcpStream::connect((proxy_addr.as_str(), proxy_port)).unwrap()
             };
 
-            // let mut proxy_buf = BufStream::new(proxy_conn.try_clone().unwrap());
-            // let mut proxy_buf2 = BufStream::new(proxy_conn);
             let mut proxy_conn2 = proxy_conn.try_clone().unwrap();
-
-            // let conn_rx = channeled_in.get_channel_recv(1);
-            // let conn_tx = channeled_out.get_channel_send(1);
-
-            // if proxy_listen {
-            //     conn_tx.lock().unwrap().send(b"EHLO".to_vec()).unwrap();
-            // }
 
             let _thread_tx = spawn(move || {
                 loop {
-                    // println!("Read");
-                    // let buf = proxy_buf.fill_buf().unwrap();
-                    // let length = buf.len();
                     let mut buf = [0; 2048];
                     let length = proxy_conn.read(&mut buf).unwrap();
-                    // println!("Read2");
+
                     if length > 0 {
                         println!("sending {} bytes: ", length);
-                        channeled_out.write_stream(1, &buf[..length]).unwrap();
-                        // conn_tx.send(buf.to_vec()).unwrap();
-                        // ch.write_all(buf);
+                        stream_out.chunk(1, 1, &buf[..length]).unwrap();
                     }
-                    // proxy_buf.consume(length);
                 }
             });
 
-            println!("here");
-
             let _thread_rx = spawn(move || {
                 loop {
-                    println!("Recv");
-                    let (_c, d) = channeled_in.read_stream().unwrap();
-                    // let mut buf = [0; 2048];
-                    // let size = ch.read(&mut buf).unwrap();
-                    println!("Recv2");
-                    // if size > 0 {
-                    if !d.is_empty() {
-                        // proxy_buf2.write_all(&buf[..size]).unwrap();
-                        proxy_conn2.write_all(d.as_slice()).unwrap();
+                    let packet = stream_in.dechunk().unwrap();
+
+                    if !packet.data.is_empty() {
+                        proxy_conn2.write_all(packet.data.as_slice()).unwrap();
                         proxy_conn2.flush().unwrap();
                     }
+
                     println!("Proxy: something moved!");
                 }
             });
 
             println!("Starting mage loop");
             loop {
-
                 sleep(Duration::from_secs(1));
-                // stream_channeled.channel_loop_recv().unwrap();
-                // stream_channeled.channel_loop().unwrap();
-
-                // if mage_addr.listen {
-                //     let (channel_in, data_in) = channeled_in.read_stream().unwrap();
-                //     channeled_in.write_channels(channel_in, data_in).unwrap();
-                // }
-
-                // println!("Wrote to channels");
-
-                // let data_out = channeled_out.read_channels().unwrap();
-
-                // for (channel_out, packet) in data_out {
-                //     for p in packet {
-                //         channeled_out.write_stream(channel_out, p.as_slice()).unwrap();
-                //     }
-                // }
-
-                // println!("Mage: something moved!")
             }
         }
     }

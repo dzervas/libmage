@@ -229,7 +229,7 @@ mod tests {
     // TODO: SOMETIMES this blocks
     #[test]
     fn test_listen_connect() {
-        let thread = spawn(|| test_listening());
+        let thread = spawn(test_listening);
 
         sleep(Duration::from_millis(1000));
         test_connecting();
@@ -242,24 +242,24 @@ mod tests {
 
         let sock = ffi_accept(listener);
 
-        let mut data = [4; 1000];
+        let mut data = [4; 100];
 
-        test_recv(sock, &mut data);
         test_send(sock, data.to_vec());
+        test_recv(sock, &mut data);
 
-        assert_eq!(data.to_vec(), vec![1; 1000]);
+        assert_eq!(data.to_vec(), vec![1; 100]);
     }
 
     #[cfg_attr(tarpaulin, skip)]
     fn test_connecting() {
         let sock = ffi_connect();
 
-        let mut data = [1; 1000];
+        let mut data = [1; 100];
 
         test_send(sock, data.to_vec());
         test_recv(sock, &mut data);
 
-        assert_eq!(data.to_vec(), vec![1; 1000]);
+        assert_eq!(data.to_vec(), vec![4; 100]);
     }
 
     #[cfg_attr(tarpaulin, skip)]
