@@ -1,5 +1,6 @@
 [![Coverage Status](https://coveralls.io/repos/github/dzervas/mage/badge.svg?branch=master)](https://coveralls.io/github/dzervas/mage?branch=master)
 ![Test](https://github.com/dzervas/mage/workflows/Test/badge.svg)
+![Go Test](https://github.com/dzervas/mage/workflows/Go%20Test/badge.svg)
 
 # Mage
 
@@ -9,6 +10,6 @@ Wrap a meterpreter with it and forget all your communication problems!
 # Testing the Go binary
 
 ```shell script
-cargo build --all-features --release
-ln 
+cargo build --all-features --lib
+LD_LIBRARY_PATH=target/debug go test
 ```

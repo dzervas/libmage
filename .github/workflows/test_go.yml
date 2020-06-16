@@ -14,16 +14,15 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-      - name: Test Project on ${{ matrix.os }}
+      - name: Build mage dynamic library
         run: cargo build -v --lib --all-features
 
       - name: Install Go toolchain
         uses: actions/setup-go@v1
-      - name: Test Go Bindings on ${{ matrix.os }}
+      - name: Test Go Bindings
         env:
           LD_LIBRARY_PATH: "target/debug"
-        run: |
-          go test -v
+        run: go test -v
 
       - name: Generate Coverage report
         env:

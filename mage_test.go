@@ -19,10 +19,10 @@ func HelpListen(t *testing.T, finished chan bool) {
 	c := l.Accept(seed, [32]byte{171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111})
 
 	buf := []byte("Hello")
-	fmt.Println("[Go] (L) Reading")
-	c.Read(buf)
 	fmt.Println("[Go] (L) Writing")
 	c.Write(buf)
+	fmt.Println("[Go] (L) Reading")
+	c.Read(buf)
 
 	if string(buf) != "World" {
 		t.Errorf("buf should be 'World', but it's '%s'", buf)
@@ -46,8 +46,8 @@ func HelpConnect(t *testing.T) *Stream {
 	fmt.Println("[Go] (C) Reading")
 	c.Read(buf)
 
-	if string(buf) != "World" {
-		t.Errorf("buf should be 'World', but it's '%s'", buf)
+	if string(buf) != "Hello" {
+		t.Errorf("buf should be 'Hello', but it's '%s'", buf)
 	}
 
 	return c
