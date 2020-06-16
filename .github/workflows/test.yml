@@ -21,10 +21,10 @@ jobs:
         uses: actions/setup-go@v1
 
       - name: Test Project on ${{ matrix.os }}
-        run: cargo test -v --all-features --release
+        run: cargo test -v --all-features
       - name: Test Go Bindings on ${{ matrix.os }}
         env:
-          LD_LIBRARY_PATH: "target/release"
+          LD_LIBRARY_PATH: "target/debug"
         run: |
           go test -v
 
