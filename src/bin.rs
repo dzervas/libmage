@@ -2,17 +2,16 @@ extern crate base64;
 extern crate bufstream;
 extern crate structopt;
 
-use std::io::{BufRead, Read, Write};
+use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 
-use mage::stream_channeled::StreamChanneled;
+use mage::stream::exchange_keys;
 use mage::tool::{key, Address};
 use mage::transport::*;
 
-use bufstream::BufStream;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -146,16 +145,9 @@ fn main() {
             println!("Mage stream_channeled opened! Spawning communication thread");
             // While it's wrong to assume that if we listen we're server,
             // it's safe to assume and it's just about the proxy tool
-            let mut stream_channeled = Box::new(
-                StreamChanneled::new(
-                    0,
-                    Box::new(conn),
-                    mage_addr.listen,
-                    seed.as_slice(),
-                    remote_key.as_slice(),
-                )
-                .unwrap(),
-            );
+            let (stream_in, stream_out) = exchange_keys(conn.0, conn.1, mage_addr.listen, seed.as_slice(), remote_key.as_slice()).unwrap();
+            let mut channeled_in = stream_in.to_channeled(1);
+            let mut channeled_out = stream_out.to_channeled(1);
             println!("AAA");
 
             let mut proxy_conn = if proxy_listen {
@@ -169,8 +161,8 @@ fn main() {
             // let mut proxy_buf2 = BufStream::new(proxy_conn);
             let mut proxy_conn2 = proxy_conn.try_clone().unwrap();
 
-            let ch = stream_channeled.get_channel(1);
-            let (conn_tx, conn_rx) = (ch.sender, ch.receiver);
+            // let conn_rx = channeled_in.get_channel_recv(1);
+            // let conn_tx = channeled_out.get_channel_send(1);
 
             // if proxy_listen {
             //     conn_tx.lock().unwrap().send(b"EHLO".to_vec()).unwrap();
@@ -186,7 +178,8 @@ fn main() {
                     // println!("Read2");
                     if length > 0 {
                         println!("sending {} bytes: ", length);
-                        conn_tx.lock().unwrap().send(buf.to_vec()).unwrap();
+                        channeled_out.write_stream(1, &buf[..length]).unwrap();
+                        // conn_tx.send(buf.to_vec()).unwrap();
                         // ch.write_all(buf);
                     }
                     // proxy_buf.consume(length);
@@ -198,7 +191,7 @@ fn main() {
             let _thread_rx = spawn(move || {
                 loop {
                     println!("Recv");
-                    let d = conn_rx.lock().unwrap().recv().unwrap();
+                    let (_c, d) = channeled_in.read_stream().unwrap();
                     // let mut buf = [0; 2048];
                     // let size = ch.read(&mut buf).unwrap();
                     println!("Recv2");
@@ -212,13 +205,29 @@ fn main() {
                 }
             });
 
-            sleep(Duration::from_secs(1));
-
             println!("Starting mage loop");
             loop {
+
+                sleep(Duration::from_secs(1));
                 // stream_channeled.channel_loop_recv().unwrap();
-                stream_channeled.channel_loop().unwrap();
-                println!("Mage: something moved!")
+                // stream_channeled.channel_loop().unwrap();
+
+                // if mage_addr.listen {
+                //     let (channel_in, data_in) = channeled_in.read_stream().unwrap();
+                //     channeled_in.write_channels(channel_in, data_in).unwrap();
+                // }
+
+                // println!("Wrote to channels");
+
+                // let data_out = channeled_out.read_channels().unwrap();
+
+                // for (channel_out, packet) in data_out {
+                //     for p in packet {
+                //         channeled_out.write_stream(channel_out, p.as_slice()).unwrap();
+                //     }
+                // }
+
+                // println!("Mage: something moved!")
             }
         }
     }

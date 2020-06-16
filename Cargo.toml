@@ -9,10 +9,10 @@ name = "mage"
 path = "src/lib.rs"
 crate-type = ["lib", "cdylib", "staticlib"]
 
-# [[bin]]
-# name = "mage"
-# path = "src/bin.rs"
-# required-features = ["tool"]
+[[bin]]
+name = "mage"
+path = "src/bin.rs"
+required-features = ["tool"]
 
 [dependencies]
 #std = {default-features=false, features=["panic_immediate_abort"]}

@@ -2,7 +2,7 @@ extern crate bufstream;
 extern crate sodiumoxide;
 
 mod packet;
-mod stream;
+pub mod stream;
 pub mod transport;
 
 #[cfg(not(test))]
