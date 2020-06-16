@@ -17,7 +17,6 @@ func HelpListen(t *testing.T, finished chan bool) {
 	}
 
 	c := l.Accept(seed, [32]byte{171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111})
-	ch := c.GetChannel(5)
 
 	buf := []byte("Hello")
 	fmt.Println("[Go] (L) Reading")
@@ -29,25 +28,10 @@ func HelpListen(t *testing.T, finished chan bool) {
 		t.Errorf("buf should be 'World', but it's '%s'", buf)
 	}
 
-	time.Sleep(time.Second) // Wait for channel loop to start
-	fmt.Println("===============")
-	fmt.Println("\t[Go] Channels:")
-
-	fmt.Println("\t[Go] (L) Writing")
-	ch.Write([]byte("hoho!"))
-	c.ChannelLoopOut()
-	fmt.Println("\t[Go] (L) Reading")
-	c.ChannelLoopIn()
-	ch.Read(buf)
-	if string(buf) != "hoho!" {
-		t.Errorf("buf should be 'hoho!', but it's '%s'", buf)
-	}
-
-	fmt.Println("end")
 	finished <- true
 }
 
-func HelpConnect(t *testing.T) *StreamChanneled {
+func HelpConnect(t *testing.T) *Stream {
 	fmt.Println("[Go] Connecting...")
 	seed := [32]byte{}
 	for i := range seed {
@@ -73,25 +57,7 @@ func TestListenConnect(t *testing.T) {
 	listenFinish := make(chan bool)
 	go HelpListen(t, listenFinish)
 	time.Sleep(time.Second) // Wait for listener to start
-	c := HelpConnect(t)
-	ch := c.GetChannel(5)
-	time.Sleep(time.Second) // Wait for channel loop to start
-
-	buf := []byte("haha!")
-
-	fmt.Println("\t[Go] Read")
-	c.ChannelLoopIn()
-	ch.Read(buf)
-	fmt.Println("\t[Go] Write")
-	ch.Write(buf)
-	c.ChannelLoopOut()
-
-	fmt.Println("\t[Go] Loop started")
-	time.Sleep(100 * time.Millisecond) // Wait for channel loop to start
+	HelpConnect(t)
 
 	<-listenFinish
-
-	if string(buf) != "hoho!" {
-		t.Errorf("buf should be 'hoho!', but it's '%s'", buf)
-	}
 }
