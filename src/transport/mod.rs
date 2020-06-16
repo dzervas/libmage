@@ -11,7 +11,7 @@ macro_rules! enable_transport {
 
 // Transport definition
 enable_transport!(tcp, "trans_tcp");
-// enable_transport!(socks, "trans_socks");
+enable_transport!(socks, "trans_socks");
 
 // A trait for bidirectional communication
 use std::io::{Read, Write};
