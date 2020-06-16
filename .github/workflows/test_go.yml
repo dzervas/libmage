@@ -1,0 +1,35 @@
+name: Go Test
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: "ubuntu-latest"
+
+    steps:
+      - uses: actions/checkout@v2
+      - run: git fetch --no-tags --prune --depth=1 origin ${GITHUB_REF}
+
+      - name: Install Rust stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: Test Project on ${{ matrix.os }}
+        run: cargo build -v --lib --all-features
+
+      - name: Install Go toolchain
+        uses: actions/setup-go@v1
+      - name: Test Go Bindings on ${{ matrix.os }}
+        env:
+          LD_LIBRARY_PATH: "target/debug"
+        run: |
+          go test -v
+
+      - name: Generate Coverage report
+        env:
+          LD_LIBRARY_PATH: "target/debug"
+        run: |
+          go get golang.org/x/tools/cmd/cover
+          go get github.com/mattn/goveralls
+          go test -v -covermode count -coverprofile=profile.cov ./...
+          $(go env GOPATH)/bin/goveralls -repotoken ${{ secrets.COVERALLS_TOKEN }} -parallel -coverprofile=profile.cov -service github

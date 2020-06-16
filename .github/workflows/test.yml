@@ -7,7 +7,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macOS-latest]
+        os: [ubuntu-latest, macOS-latest, windows-latest]
 
     steps:
       - uses: actions/checkout@v2
@@ -17,26 +17,12 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-      - name: Install Go toolchain
-        uses: actions/setup-go@v1
 
       - name: Test Project on ${{ matrix.os }}
         run: cargo test -v --all-features
-      - name: Test Go Bindings on ${{ matrix.os }}
-        env:
-          LD_LIBRARY_PATH: "target/debug"
-        run: |
-          go test -v
 
       - name: Generate Coverage report
         if: runner.os == 'Linux'
-        env:
-          LD_LIBRARY_PATH: "target/debug"
         run: |
           cargo install cargo-tarpaulin
           cargo tarpaulin -v -b --all-features --coveralls ${{ secrets.COVERALLS_TOKEN }}
-
-          go get golang.org/x/tools/cmd/cover
-          go get github.com/mattn/goveralls
-          go test -v -covermode count -coverprofile=profile.cov ./...
-          $(go env GOPATH)/bin/goveralls -repotoken ${{ secrets.COVERALLS_TOKEN }} -parallel -coverprofile=profile.cov -service github
