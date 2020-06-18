@@ -38,18 +38,15 @@ impl Read for HttpServer {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         let mut original = [0; 2048];
         let length = self.0.read(&mut original)?;
-        println!("{:?}", std::str::from_utf8(&original[..length]));
 
         let mut request = match Request::try_from(&original[..length]) {
             Ok(d) => d,
-            Err(e) => return Err(error_str!("{:?}", e))
+            Err(e) => return Err(error_str!("Unable to receive request: {:?}", e))
         };
-        println!("{:?}", request);
 
         let body = request.body().expect("Request has no body");
-        buf.copy_from_slice(body);
 
-        Ok(body.len())
+        Ok(buf.to_vec().write(body)?)
     }
 }
 
@@ -60,8 +57,10 @@ impl Write for HttpServer {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
         let mut response = Response::new(Version::Http11, StatusCode::InternalServerError);
         response.with_body(&buf);
+        let mut send_buffer = Vec::new();
 
-        response.send(&mut self.0)?;
+        response.send(&mut send_buffer)?;
+        self.0.write_all(send_buffer.as_slice())?;
 
         Ok(buf.len())
     }
@@ -95,9 +94,8 @@ impl Read for HttpClient {
             Err(e) => return Err(error_str!(format!("Unable to receive response: {:?}", e)))
         };
         let body = response.body().expect("Empty body received!");
-        buf.copy_from_slice(body);
 
-        Ok(body.len())
+        Ok(buf.to_vec().write(body)?)
     }
 }
 
@@ -105,9 +103,10 @@ impl Write for HttpClient {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
         let mut request = Request::new(Method::Put, "/mage".to_string(), Version::Http11);
         request.with_body(buf);
+        let mut send_buffer = Vec::new();
 
-        request.send(&mut self.0)?;
-
+        request.send(&mut send_buffer)?;
+        self.0.write_all(send_buffer.as_slice())?;
         Ok(buf.len())
     }
 
