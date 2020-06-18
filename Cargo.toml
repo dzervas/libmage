@@ -22,6 +22,9 @@ sodiumoxide = "*"
 # FFI dependencies
 lazy_static = { version = "*", optional = true }
 
+# Transport dependencies
+micro_http = { git = "https://github.com/georgepisaltu/licenta", optional = true }
+
 # Binary (=tool feature) dependencies
 base64 = { version = "*", optional = true }
 structopt = { version = "*", optional = true }
@@ -44,6 +47,7 @@ tool = ["base64", "structopt", "url", "trans_socks"]
 # Transports
 trans_tcp = []
 trans_socks = ["trans_tcp"]
+trans_http = ["micro_http"]
 
 [profile.release]
 # For these check https://github.com/johnthagen/min-sized-rust
