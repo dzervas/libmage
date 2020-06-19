@@ -23,7 +23,8 @@ sodiumoxide = "*"
 lazy_static = { version = "*", optional = true }
 
 # Transport dependencies
-micro_http = { git = "https://github.com/georgepisaltu/licenta", optional = true }
+# micro_http = { git = "https://github.com/georgepisaltu/licenta", optional = true }
+micro_http = { git = "https://github.com/dzervas/licenta", optional = true }
 
 # Binary (=tool feature) dependencies
 base64 = { version = "*", optional = true }

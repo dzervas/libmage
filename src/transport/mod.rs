@@ -60,39 +60,39 @@ pub mod tests {
     // Test listen, accept, connect
     #[cfg_attr(tarpaulin, skip)]
     pub fn test_listen_conn_inner<T: Transport>(
-        succ: bool,
-        addr: &'static str,
-        c2l: Vec<u8>,
-        mut l2c: Vec<u8>,
+        succeds: bool,
+        address: &'static str,
+        client_to_listener: Vec<u8>,
+        mut listener_to_client: Vec<u8>,
     ) {
-        let mut c2l_clone = c2l.clone();
-        let l2c_clone = l2c.clone();
+        let mut client_to_listener_clone = client_to_listener.clone();
+        let listener_to_client_clone = listener_to_client.clone();
 
         let thread = spawn(move || {
-            let listener = assert_cond!(succ, T::listen(addr));
+            let listener = assert_cond!(succeds, T::listen(address));
             let (mut reader, mut writer) = listener.accept().unwrap();
 
-            let buffer = &mut c2l_clone;
+            let buffer = &mut client_to_listener_clone;
 
             reader.read_exact(buffer).unwrap();
-            writer.write_all(l2c_clone.as_slice()).unwrap();
+            writer.write_all(listener_to_client_clone.as_slice()).unwrap();
             writer.flush().unwrap();
 
-            assert_eq!(buffer.to_vec(), c2l_clone);
+            assert_eq!(buffer.to_vec(), client_to_listener_clone);
         });
 
         sleep(Duration::from_millis(100));
-        let (mut reader, mut writer) = T::connect(addr).unwrap();
+        let (mut reader, mut writer) = T::connect(address).unwrap();
 
-        let buffer = l2c.as_mut();
+        let buffer = listener_to_client.as_mut();
 
-        writer.write_all(c2l.as_slice()).unwrap();
+        writer.write_all(client_to_listener.as_slice()).unwrap();
         writer.flush().unwrap();
         reader.read_exact(buffer).unwrap();
 
-        assert_eq!(buffer.to_vec(), l2c);
+        assert_eq!(buffer.to_vec(), listener_to_client);
 
-        assert_eq!(thread.join().is_ok(), succ);
+        assert_eq!(thread.join().is_ok(), succeds);
     }
 
     // Transport Tests
