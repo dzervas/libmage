@@ -1,5 +1,4 @@
 extern crate base64;
-extern crate bufstream;
 extern crate structopt;
 
 use std::io::{Read, Write};

@@ -1,4 +1,3 @@
-extern crate bufstream;
 extern crate sodiumoxide;
 
 mod packet;

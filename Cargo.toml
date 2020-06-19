@@ -16,7 +16,6 @@ required-features = ["tool"]
 
 [dependencies]
 #std = {default-features=false, features=["panic_immediate_abort"]}
-bufstream = "*"
 sodiumoxide = "*"
 
 # FFI dependencies
