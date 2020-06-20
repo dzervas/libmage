@@ -14,8 +14,8 @@ jobs:
         target:
           # For more check https://forge.rust-lang.org/release/platform-support.html
           # Tier 1
-          - i686-pc-windows-msvc
-          - i686-unknown-linux-gnu
+          # - i686-pc-windows-msvc
+          # - i686-unknown-linux-gnu
           - x86_64-apple-darwin
           - x86_64-pc-windows-msvc
           - x86_64-unknown-linux-gnu
@@ -33,7 +33,11 @@ jobs:
           override: true
           target: ${{ matrix.target }}
       - name: Build libmage binary
-        run: cargo build --target ${{ matrix.target }} -v --bin libmage --release --all-features
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --target ${{ matrix.target }} -v --bin libmage --release --all-features
 
       - name: Create Release
         id: create_release
