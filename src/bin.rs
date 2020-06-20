@@ -1,3 +1,5 @@
+#![no_main]
+
 extern crate base64;
 extern crate structopt;
 
@@ -76,7 +78,8 @@ enum Command {
     },
 }
 
-fn main() {
+#[no_mangle]
+pub fn main(_argc: i32, _argv: *const *const u8) {
     let opts: Opts = Opts::from_args();
 
     let mut seed = if opts.input.is_some() {

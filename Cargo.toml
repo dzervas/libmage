@@ -1,6 +1,6 @@
 [package]
-name = "mage"
-version = "0.1.0"
+name = "libmage"
+version = "0.2.0"
 authors = ["Dimitris Zervas <dzervas@dzervas.gr>"]
 edition = "2018"
 
@@ -10,13 +10,12 @@ path = "src/lib.rs"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [[bin]]
-name = "mage"
+name = "libmage"
 path = "src/bin.rs"
 required-features = ["tool"]
 
 [dependencies]
-#std = {default-features=false, features=["panic_immediate_abort"]}
-sodiumoxide = "*"
+sodiumoxide = { version = "*", default-features = false }
 
 # FFI dependencies
 lazy_static = { version = "*", optional = true }
@@ -51,6 +50,8 @@ trans_http = ["micro_http"]
 
 [profile.release]
 # For these check https://github.com/johnthagen/min-sized-rust
-lto = true
 codegen-units = 1
+lto = true
+opt-level = 'z' # Optimize for size
 panic = "abort"
+# strip = "symbols"
