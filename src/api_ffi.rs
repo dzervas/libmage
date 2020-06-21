@@ -22,25 +22,13 @@ type TRANSPORT = Tcp;
 const ADDRESS: &str = "127.0.0.1:4444";
 
 #[cfg(test)]
-macro_rules! const_test_connect {
+macro_rules! const_test {
     () => {
         const LISTEN: bool = false;
         const SEED: &[u8] = &[1; 32];
         const REMOTE_KEY: &[u8] = &[
             252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129,
             123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6,
-        ];
-    };
-}
-
-#[cfg(test)]
-macro_rules! const_test_listen {
-    () => {
-        const LISTEN: bool = true;
-        const SEED: &[u8] = &[2; 32];
-        const REMOTE_KEY: &[u8] = &[
-            171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198,
-            67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111,
         ];
     };
 }
@@ -151,7 +139,7 @@ pub extern "C" fn ffi_connect_opt(
 #[no_mangle]
 pub extern "C" fn ffi_connect() -> usize {
     #[cfg(test)]
-    const_test_connect!();
+    const_test!();
 
     _connect(ADDRESS, LISTEN, SEED, REMOTE_KEY)
 }
@@ -186,7 +174,7 @@ pub extern "C" fn ffi_accept_opt(
 #[no_mangle]
 pub extern "C" fn ffi_accept(socket: usize) -> usize {
     #[cfg(test)]
-    const_test_listen!();
+    const_test!();
 
     _accept(socket, LISTEN, SEED, REMOTE_KEY)
 }
@@ -252,8 +240,8 @@ mod tests {
 
         let mut data = [4; 100];
 
-        test_recv(sock, &mut data);
         test_send(sock, data.to_vec());
+        test_recv(sock, &mut data);
 
         assert_eq!(data.to_vec(), vec![1; 100]);
     }

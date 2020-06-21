@@ -145,8 +145,6 @@ impl PacketConfig {
             data.len() as u32 - offset as u32
         };
 
-        // Can't detect errors here... NaCl should check for errors (?)
-
         (
             Packet {
                 id,

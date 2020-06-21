@@ -9,7 +9,6 @@ use rand::random;
 
 pub struct StreamIn
 {
-    packet_config: PacketConfig,
     reader: Box<dyn Read + Send + Sync>,
     key: [u8; 32],
 }
@@ -18,21 +17,14 @@ impl StreamIn
 {
     pub fn new(reader: Box<dyn Read + Send + Sync>, key: [u8; 32]) -> Self {
         Self {
-            packet_config: PacketConfig {
-                has_id: true,
-                has_sequence: true,
-                has_data_len: true,
-                max_size: 256,
-            },
             key,
             reader,
         }
     }
 
     pub fn dechunk(&mut self) -> Result<Packet> {
-        let mut plaintext: Vec<u8> = Vec::new();
         // TODO: Use c2_chacha constants
-        let mut buffer: [u8; 64] = [0; 64];
+        let mut buffer: [u8; 256] = [0; 256];
         let mut nonce: [u8; 8] = [0; 8];
 
         self.reader.read_exact(&mut nonce)?;
@@ -42,23 +34,15 @@ impl StreamIn
             Err(_e) => return Err(error_str!("Invalid nonce length!"))
         };
 
-        println!("Reading...");
         // TODO: Handle ErrorKind::Interrupted | ErrorKind::UnexpectedEof | ErrorKind::WouldBlock gracefully
-        while let Ok(_d) = self.reader.read_exact(&mut buffer) {
-            // Do something with the tag?
-            cipher.apply_keystream(&mut buffer);
-            plaintext.extend_from_slice(&buffer);
-        println!("Reading loop...");
-        }
-
-        if plaintext.is_empty() {
-            return Err(error_str!("Could not decrypt packet"));
-        }
+        let length = self.reader.read(&mut buffer)?;
 
         #[cfg(not(test))]
-        println!("Dechunked {}: {:?}", plaintext.len(), plaintext);
+        println!("Dechunking {}: {:?}", length, &buffer[..length]);
 
-        let (packet, _config, _deserialized_bytes) = PacketConfig::deserialize(plaintext.as_slice());
+        cipher.apply_keystream(&mut buffer[..length]);
+
+        let (packet, _config, _deserialized_bytes) = PacketConfig::deserialize(&buffer[..length]);
         // While I think it's a good idea to error out on different configs, max_size can't be
         // calculated if we don't have data_len enabled, as a smaller packet will have smaller
         // max_size (due to less data). Maybe I should implement that logic in the Eq trait
