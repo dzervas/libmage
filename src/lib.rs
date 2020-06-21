@@ -1,4 +1,5 @@
-extern crate sodiumoxide;
+extern crate c2_chacha;
+extern crate rand;
 
 mod packet;
 pub mod stream;

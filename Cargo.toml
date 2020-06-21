@@ -15,7 +15,8 @@ path = "src/bin.rs"
 required-features = ["tool"]
 
 [dependencies]
-sodiumoxide = { version = "*", default-features = false }
+rand = "*"
+c2-chacha = { version = "*", default-features = false, features = [ "rustcrypto_api" ] }
 
 # FFI dependencies
 lazy_static = { version = "*", optional = true }

@@ -1,5 +1,6 @@
 extern crate lazy_static;
 
+use std::convert::TryInto;
 use std::ffi::CStr;
 use std::io::{Read, Write};
 use std::os::raw::c_void;
@@ -8,7 +9,7 @@ use std::sync::{Mutex, RwLock};
 
 use lazy_static::lazy_static;
 
-use crate::stream::{exchange_keys, StreamIn, StreamOut};
+use crate::stream::{StreamIn, StreamOut};
 use crate::transport::*;
 
 #[cfg(not(test))]
@@ -57,9 +58,13 @@ lazy_static! {
 // TODO: Handle all panics - not supported by FFI, undefined behaviour
 
 // Helper functions
-fn _connect(addr: &str, listen: bool, seed: &[u8], key: &[u8]) -> usize {
+fn _connect(addr: &str, _listen: bool, _seed: &[u8], key: &[u8]) -> usize {
+    let key_array: [u8; 32] = key.try_into().unwrap();
+
     let (connection_read, connection_write) = TRANSPORT::connect(addr).unwrap();
-    let (stream_in, stream_out) = exchange_keys(Box::new(connection_read) as Box<dyn Read + Send + Sync>, Box::new(connection_write) as Box<dyn Write + Send + Sync>, listen, seed, key).unwrap();
+    let stream_in = StreamIn::new(Box::new(connection_read) as Box<dyn Read + Send + Sync>, key_array);
+    let stream_out = StreamOut::new(Box::new(connection_write) as Box<dyn Write + Send + Sync>, key_array);
+    // let (stream_in, stream_out) = exchange_keys(Box::new(connection_read) as Box<dyn Read + Send + Sync>, Box::new(connection_write) as Box<dyn Write + Send + Sync>, listen, seed, key).unwrap();
 
     new_socket(stream_in, stream_out)
 }
@@ -77,7 +82,9 @@ fn _listen(addr: &str) -> usize {
     accept_locked.len() - 1 // len() is +1
 }
 
-fn _accept(socket: usize, listen: bool, seed: &[u8], key: &[u8]) -> usize {
+fn _accept(socket: usize, _listen: bool, _seed: &[u8], key: &[u8]) -> usize {
+    let key_array: [u8; 32] = key.try_into().unwrap();
+
     let accept_locked = ACCEPT.read().unwrap();
     let (connection_read, connection_write) = {
         // This unwraping is getting out of hand
@@ -91,7 +98,8 @@ fn _accept(socket: usize, listen: bool, seed: &[u8], key: &[u8]) -> usize {
     };
     drop(accept_locked);
 
-    let (stream_in, stream_out) = exchange_keys(connection_read, connection_write, listen, seed, key).unwrap();
+    let stream_in = StreamIn::new(Box::new(connection_read) as Box<dyn Read + Send + Sync>, key_array);
+    let stream_out = StreamOut::new(Box::new(connection_write) as Box<dyn Write + Send + Sync>, key_array);
 
     new_socket(stream_in, stream_out)
 }
@@ -244,8 +252,8 @@ mod tests {
 
         let mut data = [4; 100];
 
-        test_send(sock, data.to_vec());
         test_recv(sock, &mut data);
+        test_send(sock, data.to_vec());
 
         assert_eq!(data.to_vec(), vec![1; 100]);
     }
