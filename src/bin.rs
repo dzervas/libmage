@@ -1,19 +1,21 @@
-#![no_main]
-
 extern crate base64;
+extern crate rand;
 extern crate structopt;
 
+use std::convert::TryInto;
+use std::fs::{read, write};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 
-use mage::stream::exchange_keys;
-use mage::tool::{key, Address};
+use mage::stream::{StreamIn, StreamOut};
+use mage::tool::Address;
 use mage::transport::*;
 
 use structopt::StructOpt;
+use rand::random;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "mage")]
@@ -23,8 +25,8 @@ struct Opts {
     verbose: i32,
 
     /// Give seed as a base64 string (NOT SAFE)
-    #[structopt(short = "s", long = "seed")]
-    seed: Option<String>,
+    #[structopt(short = "k", long = "key")]
+    key: Option<String>,
 
     /// Input seed file
     #[structopt(short = "i", long = "input")]
@@ -38,7 +40,7 @@ struct Opts {
 enum Command {
     /// Handle mage keys
     Key {
-        /// Generate Seed & Public key
+        /// Generate Key
         #[structopt(short = "g", long = "gen")]
         gen: bool,
 
@@ -59,10 +61,6 @@ enum Command {
         #[structopt(short = "a", long = "address", default_value = "tcp://127.0.0.1:4444")]
         address: String,
 
-        /// Remote part mage public key
-        #[structopt(short = "k", long = "public-key")]
-        public_key: String,
-
         /// Proxy will listen for stream_channeleds
         #[structopt(short = "l", long = "listen")]
         proxy_listen: bool,
@@ -78,61 +76,57 @@ enum Command {
     },
 }
 
-#[no_mangle]
-pub fn main(_argc: i32, _argv: *const *const u8) {
+// #[no_mangle]
+// pub fn main(_argc: i32, _argv: *const *const u8) {
+fn main() {
     let opts: Opts = Opts::from_args();
 
-    let mut seed = if opts.input.is_some() {
-        key::seed_from_file(opts.input.unwrap()).unwrap()
-    } else if opts.seed.is_some() {
-        base64::decode(opts.seed.unwrap().as_bytes()).unwrap()
+    let mut key: Vec<u8> = if opts.input.is_some() {
+        read(opts.input.unwrap()).unwrap().to_vec()
+    } else if opts.key.is_some() {
+        base64::decode(opts.key.unwrap().as_bytes()).unwrap()
     } else {
         vec![]
     };
 
     match opts.cmds {
         Command::Key { gen, armor, output } => {
-            if gen && seed.is_empty() {
-                seed = key::generate_seed();
-            } else if seed.is_empty() {
-                eprintln!("Either pass --gen to generate seed or give --input <seed_file>");
+            if gen && key.is_empty() {
+                key = random::<[u8; 32]>().to_vec();
+            } else if key.is_empty() {
+                eprintln!("Either pass --gen to generate a key or give --input <key_file>");
                 return;
             }
 
-            let mut public_key = key::get_public_key(seed.clone());
-
             if armor {
-                seed = base64::encode(seed.as_slice()).into_bytes();
-                public_key = base64::encode(public_key.as_slice()).into_bytes();
+                key = base64::encode(key.as_slice()).into_bytes();
             }
 
             match output {
-                Some(d) => key::write_to_file(seed, public_key, d).unwrap(),
+                Some(d) => write(&d, key).unwrap(),
                 None => {
                     if armor {
-                        let seed_str = String::from_utf8(seed).unwrap();
-                        let public_key_str = String::from_utf8(public_key).unwrap();
+                        let key_str = String::from_utf8(key).unwrap();
                         println!(
-                            "Keypair Seed:\t{}\nPublic Key:\t{}",
-                            seed_str, public_key_str
+                            "Key:\t{}",
+                            key_str
                         )
                     } else {
-                        println!("Keypair Seed:\t{:?}\nPublic Key:\t{:?}", seed, public_key)
+                        println!("Key:\t{:?}", key)
                     }
                 }
             }
         }
         Command::Proxy {
             address,
-            public_key,
             proxy_listen,
             proxy_port,
             proxy_addr,
         } => {
             let mage_addr = Address::parse(address);
             let host_port = format!("{}:{}", mage_addr.host, mage_addr.port);
-
-            let remote_key = base64::decode(public_key.as_bytes()).unwrap();
+            println!("Key: {:?}", key);
+            let key_array: [u8; 32] = key.as_slice().try_into().unwrap();
 
             // TODO: This is temporary - select transport on runtime
             let conn = if mage_addr.listen {
@@ -147,7 +141,8 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
             println!("Mage stream_channeled opened! Spawning communication thread");
             // While it's wrong to assume that if we listen we're server,
             // it's safe to assume and it's just about the proxy tool
-            let (mut stream_in, mut stream_out) = exchange_keys(conn.0, conn.1, mage_addr.listen, seed.as_slice(), remote_key.as_slice()).unwrap();
+            let mut stream_in = StreamIn::new(conn.0, key_array);
+            let mut stream_out = StreamOut::new(conn.1, key_array);
             println!("AAA");
 
             let mut proxy_conn = if proxy_listen {
