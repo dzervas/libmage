@@ -1,0 +1,85 @@
+{
+	// Use IntelliSense to learn about possible attributes.
+	// Hover to view descriptions of existing attributes.
+	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Go: Test - debug Rust",
+			// "cargo": {
+			// 	"args": [
+			// 		"build",
+			// 		"--all-features",
+			// 		"--lib",
+			// 	]
+			// },
+			"program": "mage.go.test",
+			"preLaunchTask": "go:build:test",
+			"env": {
+				"LD_LIBRARY_PATH": "target/debug"
+			}
+		},
+		{
+			"name": "Go: Test",
+			"type": "go",
+			"request": "launch",
+			"mode": "test",
+			"program": "${workspaceFolder}",
+			"env": {
+				"LD_LIBRARY_PATH": "target/debug"
+			}
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Cargo: Build",
+			"cargo": {
+				"args": [
+					"build",
+					"--all-features",
+					"--bin",
+					"libmage"
+				]
+			},
+			"program": "${cargo:program}",
+			"args": []
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Cargo: Test",
+			"cargo": {
+				"args": [
+					"test",
+					"--no-run",
+					"--all-features",
+					"--lib",
+				]
+			},
+			"program": "${cargo:program}",
+			"args": []
+		},
+
+		// {
+		// 	"type": "cppvsdbg",
+		// 	"request": "launch",
+		// 	"name": "Launch Go Tests",
+		// 	"program": "/usr/bin/go",
+		// 	"args": ["test"],
+		// 	"environment": [
+		// 		"LD_LIBRARY_PATH=target/debug"
+		// 	],
+		// 	"cwd": "${workspaceRoot}"
+		// },
+		// {
+		// 	"name": "Launch go Tests",
+		// 	"type": "lldb-mi",
+		// 	"request": "launch",
+		// 	"target": "LD_LIBRARY_PATH=target/debug go test",
+		// 	"cwd": "${workspaceFolder}",
+		// 	"valuesFormatting": "parseText"
+		// }
+	]
+}

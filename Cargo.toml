@@ -50,6 +50,10 @@ trans_socks = ["trans_tcp"]
 trans_http = ["micro_http"]
 
 [profile.release]
+overflow-checks = true
+# This is messed up for cross compilation - https://github.com/rust-lang/rust/issues/60059
+linker-plugin-lto = false
+
 # For these check https://github.com/johnthagen/min-sized-rust
 codegen-units = 1
 lto = true

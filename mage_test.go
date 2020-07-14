@@ -13,10 +13,10 @@ func HelpListen(t *testing.T, finished chan bool) {
 
 	seed := [32]byte{}
 	for i := range seed {
-		seed[i] = 2
+		seed[i] = 1
 	}
 
-	c := l.Accept(seed, [32]byte{171, 47, 202, 50, 137, 131, 34, 194, 8, 251, 45, 171, 80, 72, 189, 67, 195, 85, 198, 67, 15, 88, 136, 151, 203, 87, 73, 97, 207, 169, 128, 111})
+	c := l.Accept(seed, [32]byte{252, 59, 51, 147, 103, 165, 34, 93, 83, 169, 45, 56, 3, 35, 175, 208, 53, 215, 129, 123, 109, 27, 228, 125, 148, 111, 107, 9, 169, 203, 220, 6})
 
 	buf := []byte("Hello")
 	fmt.Println("[Go] (L) Writing")

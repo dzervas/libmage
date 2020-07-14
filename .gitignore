@@ -10,3 +10,4 @@ example/mage.h
 src/settings.rs
 go.sum
 mage.h
+mage.go.test
