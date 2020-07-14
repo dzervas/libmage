@@ -1,6 +1,6 @@
-[![Coverage Status](https://coveralls.io/repos/github/dzervas/mage/badge.svg?branch=master)](https://coveralls.io/github/dzervas/mage?branch=master)
-![Test](https://github.com/dzervas/mage/workflows/Test/badge.svg)
-![Go Test](https://github.com/dzervas/mage/workflows/Go%20Test/badge.svg)
+[![Coverage Status](https://coveralls.io/repos/github/dzervas/libmage/badge.svg?branch=master)](https://coveralls.io/github/dzervas/libmage?branch=master)
+![Test](https://github.com/dzervas/libmage/workflows/Test/badge.svg)
+![Go Test](https://github.com/dzervas/libmage/workflows/Go%20Test/badge.svg)
 
 # Mage
 

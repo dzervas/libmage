@@ -7,11 +7,10 @@ fresh: clean all
 
 libmage.so:
 	cd ..
-	cargo build --lib --manifest-path ../Cargo.toml
+	cargo build --lib
 
 %.bin: %.c libmage.so
 	$(CC) $(CFLAGS) -o $@ $<
-	chmod u+x $@
 	@echo -e "\e[92mTo run the binary 'LD_LIBRARY_PATH=../target/debug ./$@'\e[0m"
 
 clean:
