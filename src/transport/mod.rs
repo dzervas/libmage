@@ -58,7 +58,7 @@ pub mod tests {
     }
 
     // Test listen, accept, connect
-    #[cfg_attr(tarpaulin, skip)]
+    #[cfg(not(tarapaulin_include))]
     pub fn test_listen_conn_inner<T: Transport>(
         succeds: bool,
         address: &'static str,

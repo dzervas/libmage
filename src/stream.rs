@@ -133,7 +133,7 @@ mod tests {
         };
     }
 
-    #[cfg_attr(tarpaulin, skip)]
+    #[cfg(not(tarapaulin_include))]
     fn stream_prelude() -> ((StreamIn, StreamOut), (StreamIn, StreamOut)) {
         let file = open_test_file!();
         let file_clone = file.try_clone().unwrap();
@@ -223,7 +223,7 @@ mod tests {
         );
     }
 
-    #[cfg_attr(tarpaulin, skip)]
+    #[cfg(not(tarapaulin_include))]
     fn test_stream_chunking(
         succ: bool,
         a: &mut StreamOut,

@@ -232,7 +232,7 @@ mod tests {
         assert!(thread.join().is_ok(), "Thread panicked!");
     }
 
-    #[cfg_attr(tarpaulin, skip)]
+    #[cfg(not(tarapaulin_include))]
     fn test_listening() {
         let listener = ffi_listen();
 
@@ -246,7 +246,7 @@ mod tests {
         assert_eq!(data.to_vec(), vec![1; 100]);
     }
 
-    #[cfg_attr(tarpaulin, skip)]
+    #[cfg(not(tarapaulin_include))]
     fn test_connecting() {
         let sock = ffi_connect();
 
@@ -258,7 +258,7 @@ mod tests {
         assert_eq!(data.to_vec(), vec![4; 100]);
     }
 
-    #[cfg_attr(tarpaulin, skip)]
+    #[cfg(not(tarapaulin_include))]
     fn test_send(sock: usize, data: Vec<u8>) -> usize {
         let med_buf = data.as_ptr();
         let buf = med_buf as *const _;
@@ -266,7 +266,7 @@ mod tests {
         ffi_send(sock, buf, data.len())
     }
 
-    #[cfg_attr(tarpaulin, skip)]
+    #[cfg(not(tarapaulin_include))]
     fn test_recv(sock: usize, data: &mut [u8]) -> usize {
         let buf = data.as_mut_ptr() as *mut _;
 
