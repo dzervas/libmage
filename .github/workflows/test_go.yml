@@ -19,9 +19,14 @@ jobs:
 
       - name: Install Go toolchain
         uses: actions/setup-go@v1
-      - name: Test & Generate Coverage report
+      - name: Install Go tools
+        env:
+          GO111MODULE: off
         run: |
-          GO111MODULE=off go get golang.org/x/tools/cmd/cover
-          GO111MODULE=off go get github.com/mattn/goveralls
-          LD_LIBRARY_PATH="target/debug" go test -v -covermode count -coverprofile=profile.cov ./...
-          $(go env GOPATH)/bin/goveralls -repotoken ${{ secrets.COVERALLS_TOKEN }} -covermode count -coverprofile=profile.cov -service github
+          go get golang.org/x/tools/cmd/cover
+          go get github.com/mattn/goveralls
+
+      - name: Test the code
+        run: LD_LIBRARY_PATH="target/debug" go test -v -covermode count -coverprofile=profile.cov ./...
+      - name: Upload to coveralls
+        run: goveralls -repotoken ${{ secrets.COVERALLS_TOKEN }} -covermode count -coverprofile=profile.cov -service github
