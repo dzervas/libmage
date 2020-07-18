@@ -13,9 +13,7 @@ on:
         required: true
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
-
+  build:
     strategy:
       matrix:
         target:
@@ -23,9 +21,17 @@ jobs:
           # Tier 1
           # - i686-pc-windows-msvc
           # - i686-unknown-linux-gnu
-          - x86_64-apple-darwin
-          - x86_64-pc-windows-msvc
-          - x86_64-unknown-linux-gnu
+          - triplet: x86_64-apple-darwin
+            extension: ""
+            os: macos-latest
+          - triplet: x86_64-pc-windows-msvc
+            extension: ".exe"
+            os: windows-latest
+          - triplet: x86_64-unknown-linux-gnu
+            extension: ""
+            os: ubuntu-latest
+
+    runs-on: ${{ matrix.target.os }}
 
     steps:
       - uses: actions/checkout@v2
@@ -42,47 +48,51 @@ jobs:
         with:
           toolchain: stable
           override: true
-          target: ${{ matrix.target }}
+          target: ${{ matrix.target.triplet }}
+      - name: Test everything
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: test
+          args: --target ${{ matrix.target.triplet }} -v --release --all-features
       - name: Build libmage binary
         uses: actions-rs/cargo@v1
         with:
           use-cross: true
           command: build
-          args: --target ${{ matrix.target }} -v --bin libmage --release --all-features
+          args: --target ${{ matrix.target.triplet }} -v --bin libmage --release --all-features
+      - name: Upload libmage binary as artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: libmage-${{ matrix.target.triplet }}${{ matrix.target.extension }}
+          path: target/${{ matrix.target.triplet }}/release/libmage${{ matrix.target.extension }}
 
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
       - name: Tag release (manually triggered)
-        if: github.event_name == 'workflow_dispatch' && matrix.target == 'x86_64-unknown-linux-gnu'
+        if: github.event_name == 'workflow_dispatch'
         run: git tag v${{ github.event.inputs.version }}
       - name: Push changes (manually triggered)
-        if: github.event_name == 'workflow_dispatch' && matrix.target == 'x86_64-unknown-linux-gnu'
+        if: github.event_name == 'workflow_dispatch'
         uses: ad-m/github-push-action@master
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
+      - uses: actions/download-artifact@v2
+        with:
+          path: release
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref }}
-          release_name: ${{ env.RELEASE_VERSION }}
-          draft: false
-          prerelease: false
-      - name: Upload Release Asset
-        id: upload-release-asset
-        uses: actions/upload-release-asset@v1
+          files: "release/*"
+          tag_name: v${{ env.RELEASE_VERSION }}
+      - name: Publish to crates.io
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps
-          asset_path: ./target/release/libmage
-          asset_name: libmage-${{ matrix.target }}
-          asset_content_type: application/x-binary
-
-      # - name: Publish to crates.io
-      #   if: matrix.target == 'x86_64-unknown-linux-gnu'
-      #   env:
-      #     CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      #   run: |
-      #     cargo publish --all-features
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          cargo publish --all-features
