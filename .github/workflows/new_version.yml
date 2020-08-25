@@ -9,10 +9,22 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '"major", "minor", "patch" or "1.2.3" - leave empty for "patch"'
+        description: 'Version bump: "major", "minor", "patch" or "1.2.3" - leave empty for "patch"'
 
 jobs:
+  bump:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      # Version bumping to generate correct binaries
+      - name: Bump versions
+        if: github.event_name == 'workflow_dispatch'
+        run: ./scripts/version-bump.sh ${{ github.event.inputs.version }}
+
   build:
+    needs: bump
     strategy:
       matrix:
         target:

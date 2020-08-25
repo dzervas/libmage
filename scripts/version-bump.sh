@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 function parse_version() {
 	local version="$1"
@@ -29,6 +29,7 @@ function bump_version() {
 		new_patch=$(( patch + 1 ))
 	else
 		echo "[bump_version] Could not understand action = '$action' - should be one of: major, minor, patch"
+		exit 1
 	fi
 
 	new_version="$new_major.$new_minor.$new_patch"
@@ -40,12 +41,14 @@ pushd $(git rev-parse --show-toplevel)
 # version number is in the form of 1.2.3
 if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
 	echo "Usage: $0 [-h|--help] [patch|minor|major|<version-number>]"
+	echo
 	echo "Examples:"
-	echo "\t$0  # Will bump 1.2.3 -> 1.2.4"
-	echo "\t$0 patch  # Will bump 1.2.3 -> 1.2.4"
-	echo "\t$0 minor  # 1.2.3 -> 1.3.0"
-	echo "\t$0 major  # 1.2.3 -> 2.0.0"
-	echo "\t$0 2.5.50  # 1.2.3 -> 2.5.50"
+	echo -e "\t$0  # Will bump 1.2.3 -> 1.2.4"
+	echo -e "\t$0 patch  # Will bump 1.2.3 -> 1.2.4"
+	echo -e "\t$0 minor  # 1.2.3 -> 1.3.0"
+	echo -e "\t$0 major  # 1.2.3 -> 2.0.0"
+	echo -e "\t$0 2.5.50  # 1.2.3 -> 2.5.50"
+
 	exit 0
 elif [ "$1" == "patch" ] || [ "$1" == "minor" ] || [ "$1" == "major" ]; then
 	action="$1"
